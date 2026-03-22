@@ -351,12 +351,24 @@ export default function AdminPage() {
       data: { user },
     } = await supabase.auth.getUser();
     if (user) {
-      const { data } = await supabase
+      // [수정] .single() 대신 .maybeSingle() 사용
+      const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
-        .single();
-      if (data) setCurrentUser(data as Profile);
+        .maybeSingle();
+
+      // 만약 ID로 조회되지 않는다면, 이메일로 다시 한번 시도 (안전장치)
+      if (!data) {
+        const { data: byEmail } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("email", user.email!)
+          .maybeSingle();
+        if (byEmail) setCurrentUser(byEmail as Profile);
+      } else {
+        setCurrentUser(data as Profile);
+      }
     }
   }
 
