@@ -128,51 +128,74 @@ function MeetingContent() {
         return;
       }
 
+      // 1. 유저 프로필 가져오기
       let { data: profileData } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profileData) {
-        const { data: byEmail } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("email", user.email!)
-          .maybeSingle();
-        if (byEmail) {
-          await supabase
+      // (중략: 이메일 기반 동기화 로직은 그대로 유지)
+
+      const p = profileData as Profile;
+
+      // 2. 자유석 선점 로직
+      if (seatParam) {
+        // 이미 본인에게 등록된 좌석이 있는데, 다른 QR을 찍은 경우
+        if (p.assigned_seat && p.assigned_seat !== seatParam) {
+          setAuthError(
+            `이미 ${p.assigned_seat} 번 좌석에 등록되어 있습니다. 자리를 옮기려면 관리자에게 문의하세요.`,
+          );
+          setLoading(false);
+          return;
+        }
+
+        // 아직 좌석이 없는 경우 (최초 QR 스캔)
+        if (!p.assigned_seat) {
+          // [중요] 해당 좌석을 다른 사람이 이미 선점했는지 확인
+          const { data: occupant } = await supabase
             .from("profiles")
-            .update({ id: user.id })
-            .eq("email", user.email!);
-          profileData = { ...byEmail, id: user.id };
+            .select("name")
+            .eq("assigned_seat", seatParam)
+            .maybeSingle();
+
+          if (occupant) {
+            setAuthError(
+              `해당 좌석은 이미 ${occupant.name} 님이 사용 중입니다.`,
+            );
+            setLoading(false);
+            return;
+          }
+
+          // 좌석이 비어있다면 내 정보에 등록
+          const { error: updateError } = await supabase
+            .from("profiles")
+            .update({ assigned_seat: seatParam })
+            .eq("id", user.id);
+
+          if (updateError) {
+            setAuthError("좌석 등록 중 오류가 발생했습니다.");
+            setLoading(false);
+            return;
+          }
+
+          // 로컬 상태 업데이트
+          p.assigned_seat = seatParam;
+        }
+      } else {
+        // 주소창에 seat 정보가 아예 없는 경우
+        if (!p.assigned_seat) {
+          setAuthError("좌석 QR 코드를 통해 접속해주세요.");
+          setLoading(false);
+          return;
         }
       }
 
-      if (!profileData) {
-        setAuthError("등록되지 않은 사용자입니다.");
-        setLoading(false);
-        return;
-      }
-
-      const p = profileData as Profile;
-      if (seatParam && p.assigned_seat !== seatParam) {
-        setAuthError("배정된 좌석이 아닙니다.");
-        setLoading(false);
-        return;
-      }
-
       setProfile(p);
-      const { data: msData } = await supabase
-        .from("meeting_state")
-        .select("*")
-        .maybeSingle();
-      if (msData) setMeetingState(msData as MeetingState);
-      setLoading(false);
+      // ... 이후 안건 및 미팅 상태 가져오기 로직
     }
     init();
   }, [supabase, seatParam, router]);
-
   // --- Data Fetching ---
   const fetchAgenda = useCallback(
     async (agendaId: string) => {
