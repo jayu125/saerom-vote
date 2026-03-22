@@ -1,27 +1,53 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
-  // 1. /screen 으로 시작하는 경로는 세션 체크 없이 즉시 통과
+  // 1. /screen 경로는 즉시 통과
   if (pathname.startsWith("/screen")) {
     return NextResponse.next();
   }
 
-  const response = await updateSession(request);
+  // 2. 세션 확인을 위한 Supabase 클라이언트 설정
+  let response = NextResponse.next({ request });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          );
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
+          );
+        },
+      },
+    },
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // 3. [핵심] 비로그인 유저가 /meeting 접근 시 파라미터를 'next' 보따리에 싸서 홈으로 보냄
+  if (!user && pathname.startsWith("/meeting")) {
+    const nextDestination = pathname + search;
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    redirectUrl.search = `?next=${encodeURIComponent(nextDestination)}`;
+    return NextResponse.redirect(redirectUrl);
+  }
+
   return response;
 }
 
 export const config = {
   matcher: [
-    /*
-     * 아래 경로를 제외한 모든 요청에 대해 미들웨어 실행:
-     * - _next/static (정적 파일)
-     * - _next/image (이미지 최적화)
-     * - favicon.ico (파비콘)
-     * - 이미지/파일 확장자들
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

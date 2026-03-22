@@ -32,10 +32,8 @@ import {
 } from "lucide-react";
 import { usePresence } from "@/components/SeatMap";
 
-/** Precision HUD Animations */
 const HUD_SPRING = { type: "spring" as const, stiffness: 400, damping: 30 };
 const DOCK_SPRING = { type: "spring" as const, stiffness: 500, damping: 35 };
-const DOCK_TAP = { type: "spring" as const, stiffness: 500, damping: 35 };
 
 function MeetingContent() {
   const supabase = useMemo(() => createClient(), []);
@@ -43,7 +41,6 @@ function MeetingContent() {
   const router = useRouter();
   const seatParam = searchParams.get("seat");
 
-  // --- State Management ---
   const [profile, setProfile] = useState<Profile | null>(null);
   const [meetingState, setMeetingState] = useState<MeetingState | null>(null);
   const [agenda, setAgenda] = useState<Agenda | null>(null);
@@ -61,7 +58,6 @@ function MeetingContent() {
   const [showConReasonSheet, setShowConReasonSheet] = useState(false);
   const [conReason, setConReason] = useState("");
 
-  // --- PDF & Zoom Refs ---
   const pdfDocRef = useRef<any>(null);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,21 +77,14 @@ function MeetingContent() {
     scrollTop: 0,
     scaleAtStart: 1,
   });
-
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dockShake = useAnimation();
-  const prevQuestionSuccess = useRef(false);
-  const prevVoteSuccess = useRef<"PRO" | "CON" | null>(null);
   const phase: Phase = meetingState?.phase ?? "IDLE";
 
-  // --- Auth & Initial Logic (Redirect & Seat Occupation) ---
   useEffect(() => {
     async function init() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
-      // [수정 사항 1] 미들웨어와 연동: 비로그인 시 현재 주소 기억해서 리다이렉트
       if (!user) {
         const currentPath = window.location.pathname + window.location.search;
         router.push(`/?next=${encodeURIComponent(currentPath)}`);
@@ -107,7 +96,6 @@ function MeetingContent() {
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
-
       if (!profileData) {
         const { data: byEmail } = await supabase
           .from("profiles")
@@ -128,27 +116,20 @@ function MeetingContent() {
         setLoading(false);
         return;
       }
-
       const p = profileData as Profile;
 
-      // [수정 사항 2] 자유석 선점 로직
       if (seatParam) {
         if (p.assigned_seat && p.assigned_seat !== seatParam) {
-          setAuthError(
-            `이미 ${p.assigned_seat} 번 좌석에 등록되어 있습니다. 다른 자리에 앉으려면 관리자에게 문의하세요.`,
-          );
+          setAuthError(`이미 ${p.assigned_seat} 번 좌석에 등록되어 있습니다.`);
           setLoading(false);
           return;
         }
-
         if (!p.assigned_seat) {
-          // 중복 점유 방지 확인
           const { data: occupant } = await supabase
             .from("profiles")
             .select("name")
             .eq("assigned_seat", seatParam)
             .maybeSingle();
-
           if (occupant) {
             setAuthError(
               `해당 좌석은 이미 ${occupant.name} 님이 사용 중입니다.`,
@@ -156,16 +137,10 @@ function MeetingContent() {
             setLoading(false);
             return;
           }
-
-          const { error: updateErr } = await supabase
+          await supabase
             .from("profiles")
             .update({ assigned_seat: seatParam })
             .eq("id", user.id);
-          if (updateErr) {
-            setAuthError("좌석 등록 중 오류가 발생했습니다.");
-            setLoading(false);
-            return;
-          }
           p.assigned_seat = seatParam;
         }
       } else if (!p.assigned_seat) {
@@ -187,118 +162,38 @@ function MeetingContent() {
 
   useEffect(() => {
     if (phase === "ENDED") router.replace("/meeting/closed");
-  }, [phase, router]);
-
-  usePresence("saerom-presence", profile?.id);
-
-  // 시각적 피드백
-  useEffect(() => {
-    if (questionSuccess && !prevQuestionSuccess.current) {
-      void dockShake.start({
-        x: [0, -3, 3, -2, 2, 0],
-        transition: { duration: 0.38 },
-      });
-    }
-    prevQuestionSuccess.current = questionSuccess;
-  }, [questionSuccess, dockShake]);
-
-  useEffect(() => {
-    if (voteSuccess !== null && prevVoteSuccess.current === null) {
-      void dockShake.start({
-        x: [0, -4, 4, -2, 2, 0],
-        transition: { duration: 0.4 },
-      });
-    }
-    prevVoteSuccess.current = voteSuccess;
-  }, [voteSuccess, dockShake]);
-
-  const fetchAgenda = useCallback(
-    async (agendaId: string) => {
-      const { data } = await supabase
+    if (meetingState?.current_agenda_id) {
+      supabase
         .from("agendas")
         .select("*")
-        .eq("id", agendaId)
-        .maybeSingle();
-      if (data) setAgenda(data as Agenda);
-    },
-    [supabase],
-  );
-
-  useEffect(() => {
-    if (meetingState?.current_agenda_id)
-      fetchAgenda(meetingState.current_agenda_id);
-  }, [meetingState?.current_agenda_id, fetchAgenda]);
-
-  const checkVoteStatus = useCallback(async () => {
-    if (!profile || !meetingState?.current_agenda_id) return;
-    const { data } = await supabase
-      .from("votes")
-      .select("id")
-      .eq("agenda_id", meetingState.current_agenda_id)
-      .eq("user_id", profile.id)
-      .maybeSingle();
-    setHasVoted(!!data);
-  }, [supabase, profile, meetingState?.current_agenda_id]);
-
-  const checkQuestionStatus = useCallback(async () => {
-    if (!profile || !meetingState?.current_agenda_id) return;
-    const { data } = await supabase
-      .from("questions")
-      .select("id")
-      .eq("agenda_id", meetingState.current_agenda_id)
-      .eq("user_id", profile.id)
-      .in("status", ["waiting", "speaking"])
-      .maybeSingle();
-    const active = !!data;
-    setHasAskedQuestion(active);
-    if (!active) setQuestionSuccess(false);
-  }, [supabase, profile, meetingState?.current_agenda_id]);
-
-  useEffect(() => {
-    if (phase === "VOTING") {
-      checkVoteStatus();
-      setVoteSuccess(null);
-    } else {
-      setShowConReasonSheet(false);
-      setConReason("");
+        .eq("id", meetingState.current_agenda_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setAgenda(data as Agenda);
+        });
+      if (profile) {
+        supabase
+          .from("votes")
+          .select("id")
+          .eq("agenda_id", meetingState.current_agenda_id)
+          .eq("user_id", profile.id)
+          .maybeSingle()
+          .then(({ data }) => setHasVoted(!!data));
+        supabase
+          .from("questions")
+          .select("id")
+          .eq("agenda_id", meetingState.current_agenda_id)
+          .eq("user_id", profile.id)
+          .in("status", ["waiting", "speaking"])
+          .maybeSingle()
+          .then(({ data }) => setHasAskedQuestion(!!data));
+      }
     }
-  }, [phase, checkVoteStatus]);
-
-  useEffect(() => {
-    if (phase === "IDLE" || phase === "QA" || phase === "INTRO") {
-      checkQuestionStatus();
-      setQuestionSuccess(false);
-      setShowMemoInput(false);
-      setQuestionMemo("");
-    }
-  }, [phase, checkQuestionStatus]);
-
-  // Real-time
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (!meetingState?.timer_end_at) {
-      setTimerSeconds(null);
-      return;
-    }
-    const calc = () => {
-      const diff = Math.max(
-        0,
-        Math.ceil(
-          (new Date(meetingState.timer_end_at!).getTime() - Date.now()) / 1000,
-        ),
-      );
-      setTimerSeconds(diff);
-    };
-    calc();
-    timerRef.current = setInterval(calc, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [meetingState?.timer_end_at]);
+  }, [phase, meetingState?.current_agenda_id, profile, supabase, router]);
 
   useEffect(() => {
     const channel = supabase
-      .channel("attendee-realtime")
+      .channel("attendee-sync")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "meeting_state" },
@@ -310,41 +205,35 @@ function MeetingContent() {
         "postgres_changes",
         { event: "*", schema: "public", table: "questions" },
         () => {
-          void checkQuestionStatus();
+          if (profile && meetingState?.current_agenda_id)
+            supabase
+              .from("questions")
+              .select("id")
+              .eq("agenda_id", meetingState.current_agenda_id)
+              .eq("user_id", profile.id)
+              .in("status", ["waiting", "speaking"])
+              .maybeSingle()
+              .then(({ data }) => setHasAskedQuestion(!!data));
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, checkQuestionStatus]);
-
-  // PDF
-  function destroyPdf() {
-    if (pdfDocRef.current) {
-      pdfDocRef.current.destroy();
-      pdfDocRef.current = null;
-    }
-  }
+  }, [supabase, profile, meetingState?.current_agenda_id]);
 
   useEffect(() => {
     if (!agenda?.pdf_url) {
-      destroyPdf();
       setNumPages(0);
-      setPdfError(false);
-      setPageBaseDims([]);
       return;
     }
     let cancelled = false;
-    async function loadDocument() {
-      destroyPdf();
+    async function load() {
       setPdfLoading(true);
       setPdfError(false);
       try {
         const pdfjsLib = await initPdfWorker();
-        // [수정 사항 3] TypeScript 빌드 에러 방지 (pdfjsLib Null Check)
-        if (!pdfjsLib) throw new Error("PDF Library missing");
-
+        if (!pdfjsLib) throw new Error("Null");
         const res = await fetch(agenda!.pdf_url!);
         const buf = await res.arrayBuffer();
         if (cancelled) return;
@@ -356,12 +245,12 @@ function MeetingContent() {
         pdfDocRef.current = pdf;
         setNumPages(pdf.numPages);
         setScale(1);
-      } catch (err) {
+      } catch {
         if (!cancelled) setPdfError(true);
       }
       if (!cancelled) setPdfLoading(false);
     }
-    loadDocument();
+    load();
     return () => {
       cancelled = true;
     };
@@ -370,12 +259,11 @@ function MeetingContent() {
   useEffect(() => {
     if (!pdfDocRef.current || numPages === 0) return;
     let cancelled = false;
-    async function renderAll() {
+    async function render() {
       const pdf = pdfDocRef.current;
       const container = scrollRef.current;
       if (!pdf || !container) return;
       await new Promise((r) => requestAnimationFrame(r));
-      if (cancelled) return;
       const containerWidth = container.clientWidth;
       const dims: { w: number; h: number }[] = [];
       for (let i = 0; i < numPages; i++) {
@@ -401,24 +289,21 @@ function MeetingContent() {
       }
       if (!cancelled) setPageBaseDims(dims);
     }
-    renderAll();
+    render();
     return () => {
       cancelled = true;
     };
   }, [numPages]);
 
   useEffect(() => {
-    for (let i = 0; i < pageBaseDims.length; i++) {
-      const canvas = canvasRefs.current[i];
-      if (!canvas) continue;
-      canvas.style.width = `${pageBaseDims[i].w * scale}px`;
-      canvas.style.height = `${pageBaseDims[i].h * scale}px`;
-    }
+    pageBaseDims.forEach((dim, i) => {
+      if (canvasRefs.current[i]) {
+        canvasRefs.current[i]!.style.width = `${dim.w * scale}px`;
+        canvasRefs.current[i]!.style.height = `${dim.h * scale}px`;
+      }
+    });
   }, [scale, pageBaseDims]);
 
-  useEffect(() => () => destroyPdf(), []);
-
-  // Zoom Pivot 보정 로직
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (e.touches.length === 2) {
@@ -445,59 +330,32 @@ function MeetingContent() {
     [scale],
   );
 
-  const onTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (e.touches.length === 2 && scrollRef.current) {
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        const dist = Math.hypot(
-          t2.clientX - t1.clientX,
-          t2.clientY - t1.clientY,
-        );
-        const ratio = dist / pinchRef.current.dist;
-        const nextScale = Math.min(
-          Math.max(pinchRef.current.scale * ratio, 1),
-          5,
-        );
-        const { x, y, scrollLeft, scrollTop, scaleAtStart } =
-          zoomPosRef.current;
-        const currentRatio = nextScale / scaleAtStart;
-        scrollRef.current.scrollLeft = (scrollLeft + x) * currentRatio - x;
-        scrollRef.current.scrollTop = (scrollTop + y) * currentRatio - y;
-        setScale(nextScale);
-      }
-    },
-    [scale],
-  );
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && scrollRef.current) {
+      const dist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY,
+      );
+      const nextScale = Math.min(
+        Math.max(pinchRef.current.scale * (dist / pinchRef.current.dist), 1),
+        5,
+      );
+      const { x, y, scrollLeft, scrollTop, scaleAtStart } = zoomPosRef.current;
+      const ratio = nextScale / scaleAtStart;
+      scrollRef.current.scrollLeft = (scrollLeft + x) * ratio - x;
+      scrollRef.current.scrollTop = (scrollTop + y) * ratio - y;
+      setScale(nextScale);
+    }
+  }, []);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || numPages === 0) return;
-    const handler = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      setScale((s) => Math.min(Math.max(s - e.deltaY * 0.003, 1), 5));
-    };
-    el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-  }, [numPages]);
-
-  const zoomIn = () => setScale((s) => Math.min(s + 0.5, 5));
-  const zoomOut = () => setScale((s) => Math.max(s - 0.5, 1));
   const resetZoom = () => {
     setScale(1);
     if (scrollRef.current)
       scrollRef.current.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   };
 
-  // Handlers
-  const submitVote = async (choice: "PRO" | "CON", conReasonText?: string) => {
+  const submitVote = async (choice: "PRO" | "CON", reason?: string) => {
     if (hasVoted || voting || !meetingState?.current_agenda_id) return;
-    if (choice === "CON" && !(conReasonText ?? "").trim()) {
-      alert("반대 사유를 입력해 주세요.");
-      return;
-    }
-    setShowConReasonSheet(false);
     setVoting(true);
     try {
       const res = await fetch("/api/vote", {
@@ -506,20 +364,17 @@ function MeetingContent() {
         body: JSON.stringify({
           agenda_id: meetingState.current_agenda_id,
           choice,
-          ...(choice === "CON"
-            ? { con_reason: (conReasonText ?? "").trim() }
-            : {}),
+          con_reason: reason,
         }),
       });
       if (res.ok) {
         setHasVoted(true);
         setVoteSuccess(choice);
-        setConReason("");
-      } else alert("투표 중 오류가 발생했습니다.");
-    } catch {
-      alert("네트워크 오류가 발생했습니다.");
+      }
+    } finally {
+      setVoting(false);
+      setShowConReasonSheet(false);
     }
-    setVoting(false);
   };
 
   const submitQuestion = async () => {
@@ -539,339 +394,221 @@ function MeetingContent() {
         setHasAskedQuestion(true);
         setQuestionSuccess(true);
         setShowMemoInput(false);
-      } else alert("질문 신청 중 오류가 발생했습니다.");
-    } catch {
-      alert("네트워크 오류가 발생했습니다.");
+      }
+    } finally {
+      setAskingQuestion(false);
     }
-    setAskingQuestion(false);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
-  };
-
-  if (loading) {
+  if (loading)
     return (
-      <div className="min-h-screen meeting-hud-dotgrid flex items-center justify-center relative overflow-hidden">
-        <Loader2 className="w-8 h-8 text-cyan-400/90 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#05070A]">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
       </div>
     );
-  }
-
-  if (authError) {
+  if (authError)
     return (
-      <div className="min-h-screen meeting-hud-dotgrid flex items-center justify-center p-6 relative overflow-hidden">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={HUD_SPRING}
-          className="meeting-hud-surface rounded-[32px] p-10 max-w-md w-full text-center space-y-6 z-10"
-        >
-          <Shield className="w-12 h-12 text-accent-red mx-auto" />
-          <h2 className="text-xl font-semibold tracking-tight text-accent-red">
-            접근 차단
-          </h2>
-          <p className="text-sm text-slate-400 font-sans">{authError}</p>
-          <motion.button
-            whileTap={{ scale: 0.96 }}
+      <div className="min-h-screen flex items-center justify-center bg-[#05070A] p-6 text-center">
+        <div className="bg-white/5 border border-white/10 p-10 rounded-3xl space-y-6">
+          <Shield className="w-12 h-12 text-red-500 mx-auto" />
+          <h2 className="text-xl font-bold">접근 차단</h2>
+          <p className="text-sm opacity-50">{authError}</p>
+          <button
             onClick={() => router.push("/")}
-            className="meeting-hud-energy meeting-hud-energy--cyan w-full px-6 py-3 rounded-2xl text-sm font-medium text-slate-100 cursor-pointer"
+            className="w-full py-3 rounded-2xl bg-blue-600 font-bold cursor-pointer transition-colors hover:bg-blue-500"
           >
             돌아가기
-          </motion.button>
-        </motion.div>
+          </button>
+        </div>
       </div>
     );
-  }
 
-  const phaseLabel: Record<Phase, string> = {
-    IDLE: "대기 중",
-    INTRO: "안건 소개",
-    QA: "질의응답",
-    VOTING: "투표 진행",
-    RESULT: "결과 확인",
-    ENDED: "회의 종료",
-  };
-  const stationMeta = profile?.assigned_seat
-    ? `[ STATION: ${profile.assigned_seat.replace(/-/g, "_").toUpperCase()} ]`
-    : "[ STATION: — ]";
   const attendeePdfHidden =
     (phase === "IDLE" && !!meetingState?.current_agenda_id) ||
     phase === "RESULT";
-  const showQuestionUI = phase === "INTRO" || phase === "QA";
-  const showVotingFooter = phase === "VOTING";
+  const stationMeta = profile?.assigned_seat
+    ? `[ STATION: ${profile.assigned_seat.replace(/-/g, "_").toUpperCase()} ]`
+    : "[ STATION: — ]";
 
   return (
-    <div className="h-screen w-screen overflow-hidden relative meeting-hud-dotgrid text-slate-100">
-      <div className="meeting-hud-scanline" />
-
-      {/* 1. PDF Container with Snap & Pivot Zoom */}
+    <div className="h-screen w-screen overflow-hidden relative bg-[#05070A] text-white">
       <div
         ref={scrollRef}
-        className={`fixed inset-0 z-[2] overflow-y-auto overflow-x-auto transition-all ${scale === 1 ? "snap-y snap-mandatory" : ""}`}
-        style={{ WebkitOverflowScrolling: "touch" }}
+        className={`fixed inset-0 z-[2] overflow-auto transition-all ${scale === 1 ? "snap-y snap-mandatory" : ""}`}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
       >
         {numPages > 0 && (
           <div
-            className={`flex flex-col gap-6 pt-24 pb-[32vh] px-2 transition-opacity duration-300 ${attendeePdfHidden ? "absolute inset-0 opacity-0 pointer-events-none -z-10" : "opacity-100"}`}
+            className={`flex flex-col gap-6 pt-24 pb-[32vh] px-2 transition-opacity ${attendeePdfHidden ? "opacity-0 pointer-events-none" : "opacity-100"}`}
             style={{ width: "fit-content", minWidth: "100%", margin: "0 auto" }}
           >
             {Array.from({ length: numPages }).map((_, i) => (
               <div
                 key={i}
-                className="snap-start snap-always"
+                className="snap-start"
                 style={{ scrollMarginTop: "100px" }}
               >
                 <canvas
                   ref={(el) => {
                     canvasRefs.current[i] = el;
                   }}
-                  className="select-none rounded-lg mx-auto shadow-2xl bg-white border border-white/10"
+                  className="select-none rounded-lg mx-auto shadow-2xl bg-white"
                 />
               </div>
             ))}
           </div>
         )}
-        {pdfLoading && (
-          <div className="flex items-center justify-center min-h-full">
-            <div className="meeting-hud-surface rounded-2xl px-8 py-6 flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 text-cyan-400/90 animate-spin" />
-              <p className="text-slate-400 text-sm font-sans">
-                안건 문서를 불러오는 중...
-              </p>
-            </div>
-          </div>
-        )}
-        {pdfError && (
-          <div className="flex items-center justify-center min-h-full">
-            <div className="meeting-hud-surface rounded-[28px] p-8 max-w-sm text-center space-y-3">
-              <AlertTriangle className="w-12 h-12 text-amber-400/90 mx-auto" />
-              <p className="font-medium text-slate-100 font-sans">
-                안건 문서를 불러올 수 없습니다
-              </p>
-            </div>
-          </div>
-        )}
-        {!pdfLoading && !pdfError && numPages === 0 && (
-          <div className="flex items-center justify-center min-h-full">
-            <div className="text-center space-y-3">
-              <FileText className="w-16 h-16 text-slate-600 mx-auto" />
-              <p className="text-slate-500 text-sm font-sans">
-                안건을 기다리는 중...
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* 2. Top Status HUD */}
       <div className="fixed top-4 left-3 right-3 z-30 flex justify-center pointer-events-none">
         <motion.div
           initial={{ opacity: 0, y: -18 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={HUD_SPRING}
-          className="pointer-events-auto w-full max-w-xl rounded-full meeting-hud-surface px-4 py-2.5 flex items-center justify-between gap-3"
+          className="pointer-events-auto w-full max-w-xl rounded-full bg-black/60 backdrop-blur-xl border border-white/10 px-4 py-2.5 flex items-center justify-between"
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 shrink-0 rounded-lg border-[0.5px] border-white/[0.12] bg-blue-500/10 flex items-center justify-center">
-              <Vote className="w-4 h-4 text-cyan-300/90" />
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <Vote className="w-4 h-4 text-blue-400" />
             </div>
-            <div className="min-w-0">
-              <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-slate-500 leading-tight">
+            <div className="text-left font-sans">
+              <p className="text-[8px] font-mono opacity-50 leading-tight">
                 {stationMeta}
               </p>
-              <p className="text-[11px] font-semibold text-slate-200 truncate tracking-tight font-sans">
+              <p className="text-[11px] font-bold truncate">
                 대위원회 · {profile?.name}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <motion.span
-              animate={{ opacity: [1, 0.72, 1] }}
-              transition={{
-                duration: 2.4,
-                repeat: Infinity,
-                ease: "easeInOut",
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono px-2.5 py-1 rounded-full border border-white/10 uppercase">
+              {phase}
+            </span>
+            <button
+              onClick={() => {
+                supabase.auth.signOut();
+                router.push("/");
               }}
-              className={`text-[9px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border-[0.5px] ${phase === "VOTING" ? "border-emerald-500/35 text-emerald-400 bg-emerald-500/10" : "border-white/10 text-slate-400 bg-white/5"}`}
-            >
-              {phaseLabel[phase]}
-            </motion.span>
-            {timerSeconds !== null && phase === "VOTING" && (
-              <span
-                className={`font-mono text-lg font-bold tabular-nums tracking-tight flex items-center gap-1.5 min-w-[4.5rem] justify-end ${timerSeconds <= 10 ? "text-red-400" : "text-emerald-400"}`}
-              >
-                <Timer className="w-4 h-4 opacity-80" />{" "}
-                {Math.floor(timerSeconds / 60)}:
-                {(timerSeconds % 60).toString().padStart(2, "0")}
-              </span>
-            )}
-            <motion.button
-              whileTap={{ scale: 0.96 }}
-              onClick={handleLogout}
-              className="p-2 rounded-full text-slate-500 hover:text-slate-200 cursor-pointer"
+              className="p-2 opacity-50 hover:opacity-100 cursor-pointer transition-opacity"
             >
               <LogOut className="w-4 h-4" />
-            </motion.button>
+            </button>
           </div>
         </motion.div>
       </div>
 
-      {/* 3. Right Zoom Controls */}
-      {numPages > 0 && !attendeePdfHidden && (
-        <motion.div
-          initial={{ opacity: 0, x: 18 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={HUD_SPRING}
-          className="fixed top-[5.25rem] right-3 z-30 flex flex-col gap-2"
-        >
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            onClick={zoomIn}
-            className="meeting-hud-surface w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:text-cyan-300 cursor-pointer"
+      {!attendeePdfHidden && (
+        <div className="fixed top-[5.25rem] right-3 z-30 flex flex-col gap-2">
+          <button
+            onClick={() => setScale((s) => Math.min(s + 0.5, 5))}
+            className="w-10 h-10 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center cursor-pointer hover:text-blue-400 transition-colors"
           >
             <ZoomIn className="w-4 h-4" />
-          </motion.button>
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            onClick={zoomOut}
-            className="meeting-hud-surface w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:text-cyan-300 cursor-pointer"
+          </button>
+          <button
+            onClick={() => setScale((s) => Math.max(s - 0.5, 1))}
+            className="w-10 h-10 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center cursor-pointer hover:text-blue-400 transition-colors"
           >
             <ZoomOut className="w-4 h-4" />
-          </motion.button>
-          <motion.button
-            whileTap={{ scale: 0.96 }}
+          </button>
+          <button
             onClick={resetZoom}
-            className="meeting-hud-surface w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:text-cyan-300 cursor-pointer"
+            className="w-10 h-10 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center cursor-pointer hover:text-blue-400 transition-colors"
           >
             <Maximize className="w-4 h-4" />
-          </motion.button>
-        </motion.div>
+          </button>
+        </div>
       )}
 
-      {/* 4. Bottom Interaction Dock */}
       {(phase !== "IDLE" || !!meetingState?.current_agenda_id) && (
-        <>
-          <div className="meeting-hud-dock-gradient" />
-          <div className="meeting-hud-dock">
-            <motion.div className="max-w-lg mx-auto w-full" animate={dockShake}>
-              <AnimatePresence mode="wait">
-                {showQuestionUI && (
-                  <motion.div
-                    key="qa-action"
-                    initial={{ opacity: 0, y: 24 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -18 }}
-                    transition={DOCK_SPRING}
-                  >
-                    {questionSuccess || hasAskedQuestion ? (
-                      <div className="rounded-2xl border-[0.5px] border-emerald-500/25 bg-black/20 px-4 py-4 text-center">
-                        <Check className="w-8 h-8 text-emerald-400 mx-auto" />
-                        <p className="text-sm font-black text-emerald-400 font-sans">
-                          질문 신청 완료
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-4 pb-8 bg-gradient-to-t from-black/80 to-transparent">
+          <motion.div animate={dockShake} className="max-w-lg mx-auto">
+            <AnimatePresence mode="wait">
+              {(phase === "INTRO" || phase === "QA") && (
+                <motion.div
+                  key="qa"
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                >
+                  {hasAskedQuestion ? (
+                    <div className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-center">
+                      <Check className="w-6 h-6 mx-auto mb-1 text-emerald-400" />
+                      <p className="text-sm font-bold text-emerald-400">
+                        질문 신청 완료
+                      </p>
+                    </div>
+                  ) : showMemoInput ? (
+                    <div className="space-y-3 bg-black/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10">
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs font-bold text-blue-400 font-sans">
+                          [ 질문 내용 입력 ]
                         </p>
-                      </div>
-                    ) : showMemoInput ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-bold text-amber-500/90 font-sans">
-                            질문 내용 (선택)
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setShowMemoInput(false)}
-                            className="text-slate-500 text-xs font-sans"
-                          >
-                            접기
-                          </button>
-                        </div>
-                        <textarea
-                          value={questionMemo}
-                          onChange={(e) => setQuestionMemo(e.target.value)}
-                          placeholder="질문을 입력하세요..."
-                          rows={3}
-                          className="w-full p-3 rounded-2xl bg-black/30 border border-white/10 text-slate-100 text-sm focus:outline-none font-sans"
-                        />
-                        <motion.button
-                          whileTap={{ scale: 0.96 }}
-                          onClick={submitQuestion}
-                          disabled={askingQuestion}
-                          className="w-full py-3 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-500 font-black font-sans"
+                        <button
+                          onClick={() => setShowMemoInput(false)}
+                          className="text-xs opacity-50 cursor-pointer"
                         >
-                          {askingQuestion ? "신청 중..." : "질문 신청하기"}
-                        </motion.button>
+                          접기
+                        </button>
                       </div>
-                    ) : (
-                      <motion.button
-                        whileTap={{ scale: 0.96 }}
-                        onClick={() => setShowMemoInput(true)}
-                        className="w-full flex items-center justify-center gap-3 rounded-full border border-amber-500/40 bg-amber-500/5 px-5 py-3 cursor-pointer"
+                      <textarea
+                        value={questionMemo}
+                        onChange={(e) => setQuestionMemo(e.target.value)}
+                        placeholder="질문을 입력하세요..."
+                        className="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-3 text-sm focus:outline-none"
+                      />
+                      <button
+                        onClick={submitQuestion}
+                        disabled={askingQuestion}
+                        className="w-full py-3 rounded-xl bg-blue-600 font-bold cursor-pointer transition-colors hover:bg-blue-500"
                       >
-                        <MessageSquare className="w-4 h-4 text-amber-700" />{" "}
-                        <span className="text-sm font-black text-amber-800 font-sans">
-                          질문하기
-                        </span>{" "}
-                        <ChevronRight className="w-4 h-4 text-amber-700" />
-                      </motion.button>
-                    )}
-                  </motion.div>
-                )}
-                {showVotingFooter && (
-                  <motion.div
-                    key="vote-action"
-                    initial={{ opacity: 0, y: 24 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -18 }}
-                    transition={DOCK_SPRING}
-                  >
-                    {voteSuccess || hasVoted ? (
-                      <div className="rounded-2xl border-[0.5px] border-emerald-500/25 bg-black/20 px-4 py-4 text-center">
-                        <Check
-                          className={`w-8 h-8 mx-auto ${voteSuccess === "CON" ? "text-red-400" : "text-emerald-400"}`}
-                        />
-                        <p
-                          className={`text-sm font-black font-sans ${voteSuccess === "CON" ? "text-red-400" : "text-emerald-400"}`}
-                        >
-                          투표 완료
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex gap-3">
-                        <motion.button
-                          whileTap={{ scale: 0.96 }}
-                          onClick={() => submitVote("PRO")}
-                          className="flex-1 py-3.5 rounded-2xl border border-emerald-500/40 bg-emerald-500/5 text-emerald-500 font-black font-sans"
-                        >
-                          찬성
-                        </motion.button>
-                        <motion.button
-                          whileTap={{ scale: 0.96 }}
-                          onClick={() => setShowConReasonSheet(true)}
-                          className="flex-1 py-3.5 rounded-2xl border border-red-500/40 bg-red-500/5 text-red-500 font-black font-sans"
-                        >
-                          반대
-                        </motion.button>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-                {phase === "RESULT" && (
-                  <div className="rounded-2xl border border-violet-500/25 bg-violet-500/5 px-4 py-5 text-center">
-                    <p className="text-base font-black text-slate-100 font-sans">
-                      다음 안건 대기 중
-                    </p>
-                  </div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </div>
-        </>
+                        {askingQuestion ? "처리 중..." : "질문 신청하기"}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowMemoInput(true)}
+                      className="w-full py-4 rounded-full bg-white/10 backdrop-blur-xl border border-white/10 font-bold flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95"
+                    >
+                      <MessageSquare className="w-5 h-5 text-blue-400" />{" "}
+                      질문하기 <ChevronRight className="w-4 h-4 opacity-30" />
+                    </button>
+                  )}
+                </motion.div>
+              )}
+              {phase === "VOTING" && (
+                <motion.div
+                  key="vote"
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                >
+                  {hasVoted ? (
+                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-center">
+                      <Check className="w-8 h-8 mx-auto mb-1 text-blue-400" />
+                      <p className="text-sm font-bold opacity-50">투표 완료</p>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => submitVote("PRO")}
+                        className="flex-1 py-4 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 font-bold cursor-pointer transition-colors hover:bg-emerald-500/30"
+                      >
+                        찬성
+                      </button>
+                      <button
+                        onClick={() => setShowConReasonSheet(true)}
+                        className="flex-1 py-4 rounded-2xl bg-red-600/20 border border-red-500/40 text-red-400 font-bold cursor-pointer transition-colors hover:bg-red-500/30"
+                      >
+                        반대
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
       )}
 
-      {/* 5. Con Reason Modal */}
       <AnimatePresence>
         {showConReasonSheet && (
           <>
@@ -879,38 +616,39 @@ function MeetingContent() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="meeting-hud-sheet-backdrop"
               onClick={() => setShowConReasonSheet(false)}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={DOCK_SPRING}
-              className="meeting-hud-sheet-panel"
+              className="fixed bottom-0 left-0 right-0 z-50 p-6 bg-[#0F1116] rounded-t-[40px] border-t border-white/10 font-sans"
             >
-              <p className="text-sm font-black text-slate-100 font-sans mb-3">
-                반대 사유 <span className="text-red-400">(필수)</span>
-              </p>
+              <h3 className="text-lg font-bold mb-4">
+                반대 사유 입력{" "}
+                <span className="text-red-500 text-xs">(필수)</span>
+              </h3>
               <textarea
                 value={conReason}
                 onChange={(e) => setConReason(e.target.value)}
-                placeholder="반대하는 이유를 입력하세요..."
-                className="w-full min-h-[120px] p-3 rounded-2xl bg-black/35 border border-white/10 text-slate-100 focus:outline-none font-sans"
+                placeholder="반대하시는 이유를 상세히 적어주세요."
+                className="w-full h-32 bg-white/5 border border-white/10 rounded-2xl p-4 text-sm mb-4 focus:outline-none"
               />
-              <div className="flex gap-3 mt-4">
+              <div className="flex gap-3">
                 <button
                   onClick={() => setShowConReasonSheet(false)}
-                  className="flex-1 py-3 rounded-2xl border border-white/10 text-slate-400 font-black font-sans"
+                  className="flex-1 py-4 rounded-2xl bg-white/5 font-bold cursor-pointer transition-colors hover:bg-white/10"
                 >
                   취소
                 </button>
                 <button
                   onClick={() => submitVote("CON", conReason)}
-                  disabled={voting || !conReason.trim()}
-                  className="flex-1 py-3 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 font-black font-sans"
+                  disabled={!conReason.trim()}
+                  className="flex-1 py-4 rounded-2xl bg-red-600 font-bold disabled:opacity-30 cursor-pointer transition-colors hover:bg-red-500"
                 >
-                  반대 투표하기
+                  투표 완료
                 </button>
               </div>
             </motion.div>
@@ -923,13 +661,7 @@ function MeetingContent() {
 
 export default function MeetingPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen meeting-hud-dotgrid flex items-center justify-center relative overflow-hidden">
-          <Loader2 className="w-8 h-8 text-cyan-400/90 animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={null}>
       <MeetingContent />
     </Suspense>
   );
