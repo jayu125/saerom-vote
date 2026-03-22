@@ -118,7 +118,7 @@ function PdfPreviewModal({
     async function loadPdf() {
       try {
         const pdfjsLib = await initPdfWorker();
-        if (!pdfjsLib) throw new Error("PDF unavailable");
+        if (!pdfjsLib) throw new Error("PDF worker unavailable");
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();

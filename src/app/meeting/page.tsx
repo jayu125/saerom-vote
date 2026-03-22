@@ -304,6 +304,7 @@ function MeetingContent() {
       setPdfError(false);
       try {
         const pdfjsLib = await initPdfWorker();
+        if (!pdfjsLib) throw new Error("PDF worker unavailable");
         const res = await fetch(agenda!.pdf_url!);
         const buf = await res.arrayBuffer();
         if (cancelled) return;

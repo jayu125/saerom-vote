@@ -559,8 +559,7 @@ function IntroPhase({ agenda }: { agenda: Agenda | null }) {
     async function loadPdf() {
       try {
         const pdfjsLib = await initPdfWorker();
-        if (!pdfjsLib) throw new Error("PDF Worker Load Failed");
-
+        if (!pdfjsLib) throw new Error("PDF worker unavailable");
         const res = await fetch(agenda!.pdf_url!);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();

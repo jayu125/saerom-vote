@@ -30,7 +30,7 @@ export function PdfFirstPageThumbnail({ pdfUrl, maxWidth = 140, className = '' }
       setErr(false);
       try {
         const pdfjsLib = await initPdfWorker();
-        if (!pdfjsLib) throw new Error('pdf');
+        if (!pdfjsLib) throw new Error('PDF worker unavailable');
         const res = await fetch(pdfUrl);
         if (!res.ok) throw new Error(`http ${res.status}`);
         const buf = await res.arrayBuffer();
