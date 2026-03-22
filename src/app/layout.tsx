@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'SAEROM VOTING',
+  title: '대위원회',
   description: '새롬고등학교 대위원회 투표 시스템',
 };
 

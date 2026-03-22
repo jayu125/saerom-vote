@@ -676,7 +676,7 @@ function MeetingContent() {
                 {stationMeta}
               </p>
               <p className="text-[11px] font-semibold text-slate-200 truncate font-sans tracking-tight">
-                SAEROM · {profile?.name}
+                대위원회 · {profile?.name}
               </p>
             </div>
           </div>

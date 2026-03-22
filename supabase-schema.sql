@@ -1,5 +1,5 @@
 -- ============================================
--- SAEROM VOTING SYSTEM - Supabase Schema
+-- 대위원회 투표 시스템 - Supabase Schema
 -- ============================================
 -- ⚠️ 이 스크립트는 기존 테이블을 삭제하고 재생성합니다.
 -- 반드시 이메일 부분(하단)을 수정한 후 실행하세요.
@@ -81,7 +81,8 @@ CREATE TABLE meeting_state (
   phase meeting_phase DEFAULT 'IDLE',
   current_agenda_id UUID REFERENCES agendas(id) ON DELETE SET NULL,
   timer_end_at TIMESTAMPTZ,
-  current_speaker_id UUID
+  current_speaker_id UUID,
+  seat_layout JSONB DEFAULT '{"rows": 7, "sections": [6, 6, 6]}'::jsonb
 );
 
 INSERT INTO meeting_state (phase) VALUES ('IDLE');
@@ -173,7 +174,7 @@ CREATE POLICY "agendas_update" ON storage.objects
   FOR UPDATE TO authenticated USING (bucket_id = 'agendas');
 CREATE POLICY "agendas_delete" ON storage.objects
   FOR DELETE TO authenticated USING (bucket_id = 'agendas');
-
+ㄱ
 -- ============================================
 -- REPLICA IDENTITY (Realtime UPDATE 이벤트 수신 필수)
 -- ============================================

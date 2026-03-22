@@ -138,21 +138,24 @@ function HomeContent() {
   }, [supabase, checkAuth, router]);
 
   // ─── 실시간 승인 감시 (Profiles INSERT 감지) ───────────────────────
+  // page.tsx의 useEffect 부분
   useEffect(() => {
+    // authState가 'pending'일 때만 실시간 승인 감시 시작
     if (authState !== "pending" || !userEmail) return;
 
     const channel = supabase
-      .channel("home-approval-sync")
+      .channel("approval-check")
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "profiles",
-          filter: `email=eq.${userEmail}`,
+          filter: `email=eq.${userEmail}`, // 내 이메일로 프로필이 생성되는지 감시
         },
-        () => {
-          console.log("System: Admin Approval Detected!");
+        (payload) => {
+          console.log("승인 확인됨:", payload);
+          // 프로필이 생성되면 다시 인증 체크를 실행하여 'active' 상태로 전환
           checkAuth();
         },
       )
@@ -262,7 +265,7 @@ function HomeContent() {
           </motion.div>
           <div className="space-y-1">
             <h1 className="text-4xl font-black tracking-tighter gradient-text">
-              SAEROM VOTING
+              대위원회
             </h1>
             <p className="text-text-secondary text-xs font-medium tracking-widest uppercase opacity-70">
               Student Delegate System

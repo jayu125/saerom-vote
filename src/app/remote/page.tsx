@@ -447,7 +447,7 @@ export default function RemoteControlPage() {
               <Radio className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-sm font-bold gradient-text leading-tight">SAEROM VOTING</h1>
+              <h1 className="text-sm font-bold gradient-text leading-tight">대위원회</h1>
               <p className="text-[10px] text-text-muted">진행자 컨트롤</p>
             </div>
           </div>

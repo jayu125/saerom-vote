@@ -239,12 +239,15 @@ function Toast({ message, type, onClose }: { message: string; type: 'success' | 
 export default function AdminPage() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [activeTab, setActiveTab] = useState<Tab>('students');
+  const [activeTab, setActiveTab] = useState<Tab>("students");
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [csvUploading, setCsvUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -256,47 +259,71 @@ export default function AdminPage() {
   const [pendingCount, setPendingCount] = useState(0);
 
   const [voteLogs, setVoteLogs] = useState<VoteLog[]>([]);
-  const [voteResults, setVoteResults] = useState<Record<string, ReportVoteResult>>({});
+  const [voteResults, setVoteResults] = useState<
+    Record<string, ReportVoteResult>
+  >({});
   const [reportsLoading, setReportsLoading] = useState(false);
 
   const [meetingState, setMeetingState] = useState<MeetingState | null>(null);
-  const presenceSet = usePresence('saerom-presence');
+  const presenceSet = usePresence("saerom-presence");
 
-  const showToast = useCallback((message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
-  }, []);
+  const showToast = useCallback(
+    (message: string, type: "success" | "error") => {
+      setToast({ message, type });
+    },
+    [],
+  );
 
   async function fetchMeetingState() {
-    const { data } = await supabase.from('meeting_state').select('*').limit(1).single();
+    const { data } = await supabase
+      .from("meeting_state")
+      .select("*")
+      .limit(1)
+      .single();
     if (data) setMeetingState(data as MeetingState);
   }
 
   async function fetchCurrentUser() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (user) {
-      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
       if (data) setCurrentUser(data as Profile);
     }
   }
 
   async function fetchProfiles() {
-    const { data } = await supabase.from('profiles').select('*').order('student_id');
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("student_id");
     if (data) setProfiles(data as Profile[]);
   }
 
   async function fetchAgendas() {
-    const { data } = await supabase.from('agendas').select('*').order('order_index');
+    const { data } = await supabase
+      .from("agendas")
+      .select("*")
+      .order("order_index");
     if (data) setAgendas(data as Agenda[]);
   }
 
   async function fetchRequests() {
     const { data } = await supabase
-      .from('registration_requests')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .from("registration_requests")
+      .select("*")
+      .order("created_at", { ascending: false });
     if (data) {
       setRequests(data as RegistrationRequest[]);
-      setPendingCount((data as RegistrationRequest[]).filter((r) => r.status === 'pending').length);
+      setPendingCount(
+        (data as RegistrationRequest[]).filter((r) => r.status === "pending")
+          .length,
+      );
     }
   }
 
@@ -316,62 +343,108 @@ export default function AdminPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time 구독 — ref를 통해 항상 최신 fetch 함수 호출
+  // Real-time 구독 — 모든 주요 테이블 감시
   useEffect(() => {
-    const ch1 = supabase
-      .channel('admin-rt-requests')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'registration_requests' }, () => {
-        fetchRequestsRef.current();
-      })
-      .subscribe();
-
-    const ch2 = supabase
-      .channel('admin-rt-profiles')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-        fetchProfilesRef.current();
-      })
-      .subscribe();
-
-    const ch3 = supabase
-      .channel('admin-rt-meeting')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_state' }, () => {
-        fetchMeetingStateRef.current();
-      })
+    const channel = supabase
+      .channel("admin-all-changes")
+      // 1. 가입 요청 감시
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "registration_requests" },
+        () => {
+          console.log("Admin: Registration request changed");
+          fetchRequestsRef.current();
+        },
+      )
+      // 2. 학생 명단 감시 (승인 처리 시 목록 갱신)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        () => {
+          console.log("Admin: Profiles changed");
+          fetchProfilesRef.current();
+        },
+      )
+      // 3. 안건 상태 감시
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "agendas" },
+        () => {
+          console.log("Admin: Agendas changed");
+          fetchAgendas();
+        },
+      )
+      // 4. 회의 상태 감시
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "meeting_state" },
+        () => {
+          console.log("Admin: Meeting state changed");
+          fetchMeetingStateRef.current();
+        },
+      )
+      // 5. 투표 발생 시 보고서 데이터 갱신 (추가)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "votes" },
+        () => {
+          console.log("Admin: New vote recorded");
+          if (activeTab === "reports") fetchReports();
+        },
+      )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(ch1);
-      supabase.removeChannel(ch2);
-      supabase.removeChannel(ch3);
+      supabase.removeChannel(channel);
     };
-  }, [supabase]);
+  }, [supabase, activeTab]); // activeTab을 넣어 탭에 따라 보고서 갱신 여부 결정
 
   async function fetchReports() {
     setReportsLoading(true);
     try {
       // con_reason 컬럼이 아직 없는 DB에서도 동작하도록 * 사용 (명시 컬럼 나열 시 스키마 캐시 오류 가능)
-      const { data: votes } = await supabase.from('votes').select('*');
-      const { data: agendasData } = await supabase.from('agendas').select('id, title, order_index, pdf_url').order('order_index');
-      const { data: profilesData } = await supabase.from('profiles').select('id, name, email, student_id');
+      const { data: votes } = await supabase.from("votes").select("*");
+      const { data: agendasData } = await supabase
+        .from("agendas")
+        .select("id, title, order_index, pdf_url")
+        .order("order_index");
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, name, email, student_id");
 
       if (votes && agendasData && profilesData) {
         const agendaMap = new Map(
-          (agendasData as { id: string; title: string }[]).map((a) => [a.id, a.title]),
+          (agendasData as { id: string; title: string }[]).map((a) => [
+            a.id,
+            a.title,
+          ]),
         );
         const profileMap = new Map(
-          profilesData.map((p: { id: string; name: string; email: string; student_id: string }) => [p.id, p])
+          profilesData.map(
+            (p: {
+              id: string;
+              name: string;
+              email: string;
+              student_id: string;
+            }) => [p.id, p],
+          ),
         );
 
         const logs: VoteLog[] = (votes as Vote[]).map((v) => {
-          const profile = profileMap.get(v.user_id) as { name: string; email: string; student_id: string } | undefined;
+          const profile = profileMap.get(v.user_id) as
+            | { name: string; email: string; student_id: string }
+            | undefined;
           return {
             id: v.id,
             agenda_id: v.agenda_id,
-            agenda_title: (agendaMap.get(v.agenda_id) as string) || '알 수 없음',
-            user_name: profile?.name || '알 수 없음',
-            user_email: profile?.email || '',
-            student_id: profile?.student_id || '',
+            agenda_title:
+              (agendaMap.get(v.agenda_id) as string) || "알 수 없음",
+            user_name: profile?.name || "알 수 없음",
+            user_email: profile?.email || "",
+            student_id: profile?.student_id || "",
             choice: v.choice,
-            con_reason: ('con_reason' in v ? (v as Vote).con_reason : null) ?? null,
+            con_reason:
+              ("con_reason" in v ? (v as Vote).con_reason : null) ?? null,
             created_at: v.created_at,
           };
         });
@@ -379,11 +452,18 @@ export default function AdminPage() {
 
         const results: Record<string, ReportVoteResult> = {};
         for (const agenda of agendasData) {
-          const a = agenda as { id: string; title: string; order_index: number; pdf_url: string | null };
-          const agendaVotes = (votes as Vote[]).filter((v) => v.agenda_id === a.id);
+          const a = agenda as {
+            id: string;
+            title: string;
+            order_index: number;
+            pdf_url: string | null;
+          };
+          const agendaVotes = (votes as Vote[]).filter(
+            (v) => v.agenda_id === a.id,
+          );
           results[a.id] = {
-            pro: agendaVotes.filter((v) => v.choice === 'PRO').length,
-            con: agendaVotes.filter((v) => v.choice === 'CON').length,
+            pro: agendaVotes.filter((v) => v.choice === "PRO").length,
+            con: agendaVotes.filter((v) => v.choice === "CON").length,
             total: agendaVotes.length,
             title: a.title,
             order_index: a.order_index ?? 0,
@@ -393,14 +473,14 @@ export default function AdminPage() {
         setVoteResults(results);
       }
     } catch {
-      showToast('보고서 데이터를 불러오는 중 오류가 발생했습니다.', 'error');
+      showToast("보고서 데이터를 불러오는 중 오류가 발생했습니다.", "error");
     }
     setReportsLoading(false);
   }
 
   function handleCsvFile(file: File) {
-    if (!file.name.endsWith('.csv')) {
-      showToast('CSV 파일만 업로드할 수 있습니다.', 'error');
+    if (!file.name.endsWith(".csv")) {
+      showToast("CSV 파일만 업로드할 수 있습니다.", "error");
       return;
     }
     setCsvUploading(true);
@@ -410,27 +490,30 @@ export default function AdminPage() {
       complete: async (result) => {
         const rows = result.data as Record<string, string>[];
         if (rows.length === 0) {
-          showToast('CSV 파일에 데이터가 없습니다.', 'error');
+          showToast("CSV 파일에 데이터가 없습니다.", "error");
           setCsvUploading(false);
           return;
         }
         try {
-          const res = await fetch('/api/admin/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const res = await fetch("/api/admin/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ profiles: rows }),
           });
           const json = await res.json();
           if (!res.ok) throw new Error(json.error);
-          showToast(json.message, 'success');
+          showToast(json.message, "success");
           fetchProfiles();
         } catch (err) {
-          showToast(err instanceof Error ? err.message : '업로드 실패', 'error');
+          showToast(
+            err instanceof Error ? err.message : "업로드 실패",
+            "error",
+          );
         }
         setCsvUploading(false);
       },
       error: () => {
-        showToast('CSV 파싱 중 오류가 발생했습니다.', 'error');
+        showToast("CSV 파싱 중 오류가 발생했습니다.", "error");
         setCsvUploading(false);
       },
     });
@@ -444,22 +527,33 @@ export default function AdminPage() {
   }
 
   async function handleRoleChange(profileId: string, newRole: string) {
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profileId);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role: newRole })
+      .eq("id", profileId);
     if (error) {
-      showToast('역할 변경 실패: ' + error.message, 'error');
+      showToast("역할 변경 실패: " + error.message, "error");
     } else {
-      showToast('역할이 변경되었습니다.', 'success');
+      showToast("역할이 변경되었습니다.", "success");
       fetchProfiles();
     }
   }
 
   async function handleDeleteProfile(profile: Profile) {
-    if (!window.confirm(`${profile.name}(${profile.email})을(를) 삭제하시겠습니까?`)) return;
-    const { error } = await supabase.from('profiles').delete().eq('id', profile.id);
+    if (
+      !window.confirm(
+        `${profile.name}(${profile.email})을(를) 삭제하시겠습니까?`,
+      )
+    )
+      return;
+    const { error } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", profile.id);
     if (error) {
-      showToast('삭제 실패: ' + error.message, 'error');
+      showToast("삭제 실패: " + error.message, "error");
     } else {
-      showToast(`${profile.name}님이 삭제되었습니다.`, 'success');
+      showToast(`${profile.name}님이 삭제되었습니다.`, "success");
       fetchProfiles();
     }
   }
@@ -467,82 +561,97 @@ export default function AdminPage() {
   function validateSeat(seat: string): string | null {
     const layout: SeatLayout = meetingState?.seat_layout ?? DEFAULT_SEAT_LAYOUT;
     const totalCols = layout.sections.reduce((a, b) => a + b, 0);
-    const parts = seat.split('-');
-    if (parts.length !== 2) return `좌석 형식은 "행-열"이어야 합니다. (예: 3-14)`;
+    const parts = seat.split("-");
+    if (parts.length !== 2)
+      return `좌석 형식은 "행-열"이어야 합니다. (예: 3-14)`;
     const row = parseInt(parts[0], 10);
     const col = parseInt(parts[1], 10);
     if (isNaN(row) || isNaN(col)) return `좌석 번호는 숫자여야 합니다.`;
-    if (row < 1 || row > layout.rows) return `행은 1~${layout.rows} 범위여야 합니다. (입력: ${row})`;
-    if (col < 1 || col > totalCols) return `열은 1~${totalCols} 범위여야 합니다. (입력: ${col})`;
+    if (row < 1 || row > layout.rows)
+      return `행은 1~${layout.rows} 범위여야 합니다. (입력: ${row})`;
+    if (col < 1 || col > totalCols)
+      return `열은 1~${totalCols} 범위여야 합니다. (입력: ${col})`;
     const taken = profiles.find((p) => p.assigned_seat === seat);
-    if (taken) return `좌석 ${seat}은(는) 이미 ${taken.name}님이 사용 중입니다.`;
+    if (taken)
+      return `좌석 ${seat}은(는) 이미 ${taken.name}님이 사용 중입니다.`;
     return null;
   }
 
   async function handleApproveRequest(req: RegistrationRequest, seat: string) {
     const validationError = validateSeat(seat);
     if (validationError) {
-      showToast(validationError, 'error');
+      showToast(validationError, "error");
       return;
     }
 
-    const { error: insertError } = await supabase.from('profiles').insert({
+    const { error: insertError } = await supabase.from("profiles").insert({
       email: req.email,
       name: req.name,
-      student_id: '',
-      role: 'attendee',
+      student_id: "",
+      role: "attendee",
       assigned_seat: seat,
     });
 
     if (insertError) {
-      showToast('프로필 생성 실패: ' + insertError.message, 'error');
+      showToast("프로필 생성 실패: " + insertError.message, "error");
       return;
     }
 
-    await supabase.from('registration_requests').update({ status: 'approved' }).eq('id', req.id);
-    showToast(`${req.name}님의 가입을 승인했습니다. (좌석: ${seat})`, 'success');
+    await supabase
+      .from("registration_requests")
+      .update({ status: "approved" })
+      .eq("id", req.id);
+    showToast(
+      `${req.name}님의 가입을 승인했습니다. (좌석: ${seat})`,
+      "success",
+    );
     fetchRequests();
     fetchProfiles();
   }
 
   async function handleRejectRequest(req: RegistrationRequest) {
-    await supabase.from('registration_requests').update({ status: 'rejected' }).eq('id', req.id);
-    showToast(`${req.name}님의 가입을 거절했습니다.`, 'success');
+    await supabase
+      .from("registration_requests")
+      .update({ status: "rejected" })
+      .eq("id", req.id);
+    showToast(`${req.name}님의 가입을 거절했습니다.`, "success");
     fetchRequests();
   }
 
   async function handleDeleteRequest(req: RegistrationRequest) {
-    await supabase.from('registration_requests').delete().eq('id', req.id);
+    await supabase.from("registration_requests").delete().eq("id", req.id);
     fetchRequests();
   }
 
   function exportReportsCsv() {
     if (voteLogs.length === 0) {
-      showToast('내보낼 데이터가 없습니다.', 'error');
+      showToast("내보낼 데이터가 없습니다.", "error");
       return;
     }
     const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
-    const header = '안건,이름,이메일,학번,투표,반대사유,일시\n';
+    const header = "안건,이름,이메일,학번,투표,반대사유,일시\n";
     const rows = voteLogs.map((v) =>
       [
         esc(v.agenda_title),
         esc(v.user_name),
         esc(v.user_email),
         esc(v.student_id),
-        v.choice === 'PRO' ? '찬성' : '반대',
-        esc(v.con_reason ?? ''),
-        esc(new Date(v.created_at).toLocaleString('ko-KR')),
-      ].join(',')
+        v.choice === "PRO" ? "찬성" : "반대",
+        esc(v.con_reason ?? ""),
+        esc(new Date(v.created_at).toLocaleString("ko-KR")),
+      ].join(","),
     );
-    const bom = '\uFEFF';
-    const blob = new Blob([bom + header + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + header + rows.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `투표결과_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('CSV 파일이 다운로드되었습니다.', 'success');
+    showToast("CSV 파일이 다운로드되었습니다.", "success");
   }
 
   const filteredProfiles = profiles.filter((p) => {
@@ -550,22 +659,30 @@ export default function AdminPage() {
     return (
       p.name.toLowerCase().includes(q) ||
       p.email.toLowerCase().includes(q) ||
-      (p.student_id || '').toLowerCase().includes(q) ||
+      (p.student_id || "").toLowerCase().includes(q) ||
       p.role.toLowerCase().includes(q) ||
-      (p.assigned_seat || '').toLowerCase().includes(q)
+      (p.assigned_seat || "").toLowerCase().includes(q)
     );
   });
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.href = '/';
+    window.location.href = "/";
   };
 
-  const roleLabel: Record<string, string> = { admin: '관리자', facilitator: '진행자', attendee: '참석자' };
+  const roleLabel: Record<string, string> = {
+    admin: "관리자",
+    facilitator: "진행자",
+    attendee: "참석자",
+  };
 
   const contentVariants = {
     initial: { opacity: 0, y: 12 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const } },
+    animate: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const },
+    },
     exit: { opacity: 0, y: -12, transition: { duration: 0.2 } },
   };
 
@@ -574,11 +691,20 @@ export default function AdminPage() {
       {/* PDF Preview Modal */}
       <AnimatePresence>
         {pdfPreviewUrl && (
-          <PdfPreviewModal url={pdfPreviewUrl} onClose={() => setPdfPreviewUrl(null)} />
+          <PdfPreviewModal
+            url={pdfPreviewUrl}
+            onClose={() => setPdfPreviewUrl(null)}
+          />
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
       </AnimatePresence>
 
       <header className="glass-strong sticky top-0 z-40">
@@ -588,8 +714,12 @@ export default function AdminPage() {
               <VoteIcon className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold gradient-text leading-tight">SAEROM VOTING</h1>
-              <p className="text-[10px] text-text-muted leading-tight">관리자 대시보드</p>
+              <h1 className="text-lg font-bold gradient-text leading-tight">
+                대위원회
+              </h1>
+              <p className="text-[10px] text-text-muted leading-tight">
+                관리자 대시보드
+              </p>
             </div>
           </div>
 
@@ -599,22 +729,26 @@ export default function AdminPage() {
                 key={tab.key}
                 onClick={() => {
                   setActiveTab(tab.key);
-                  if (tab.key === 'reports') fetchReports();
+                  if (tab.key === "reports") fetchReports();
                 }}
                 className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                  activeTab === tab.key ? 'text-white' : 'text-text-secondary hover:text-text-primary'
+                  activeTab === tab.key
+                    ? "text-white"
+                    : "text-text-secondary hover:text-text-primary"
                 }`}
               >
                 {activeTab === tab.key && (
                   <motion.div
                     layoutId="activeTab"
                     className="absolute inset-0 bg-accent-blue/20 border border-accent-blue/30 rounded-lg"
-                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   />
                 )}
                 <tab.icon className="w-4 h-4 relative z-10" />
-                <span className="relative z-10 hidden sm:inline">{tab.label}</span>
-                {tab.key === 'requests' && pendingCount > 0 && (
+                <span className="relative z-10 hidden sm:inline">
+                  {tab.label}
+                </span>
+                {tab.key === "requests" && pendingCount > 0 && (
                   <span className="relative z-10 ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-accent-red text-white min-w-[18px] text-center">
                     {pendingCount}
                   </span>
@@ -627,7 +761,9 @@ export default function AdminPage() {
             {currentUser && (
               <div className="flex items-center gap-2 text-sm">
                 <Shield className="w-4 h-4 text-accent-amber" />
-                <span className="text-text-secondary hidden sm:inline">{currentUser.name}</span>
+                <span className="text-text-secondary hidden sm:inline">
+                  {currentUser.name}
+                </span>
               </div>
             )}
             <button
@@ -643,8 +779,14 @@ export default function AdminPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <AnimatePresence mode="wait">
-          {activeTab === 'students' && (
-            <motion.div key="students" variants={contentVariants} initial="initial" animate="animate" exit="exit">
+          {activeTab === "students" && (
+            <motion.div
+              key="students"
+              variants={contentVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
               <StudentTab
                 profiles={profiles}
                 filteredProfiles={filteredProfiles}
@@ -663,14 +805,32 @@ export default function AdminPage() {
             </motion.div>
           )}
 
-          {activeTab === 'agendas' && (
-            <motion.div key="agendas" variants={contentVariants} initial="initial" animate="animate" exit="exit">
-              <AgendaTab agendas={agendas} supabase={supabase} showToast={showToast} fetchAgendas={fetchAgendas} onPdfPreview={(url) => setPdfPreviewUrl(url)} />
+          {activeTab === "agendas" && (
+            <motion.div
+              key="agendas"
+              variants={contentVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <AgendaTab
+                agendas={agendas}
+                supabase={supabase}
+                showToast={showToast}
+                fetchAgendas={fetchAgendas}
+                onPdfPreview={(url) => setPdfPreviewUrl(url)}
+              />
             </motion.div>
           )}
 
-          {activeTab === 'requests' && (
-            <motion.div key="requests" variants={contentVariants} initial="initial" animate="animate" exit="exit">
+          {activeTab === "requests" && (
+            <motion.div
+              key="requests"
+              variants={contentVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
               <RequestsTab
                 requests={requests}
                 onApprove={handleApproveRequest}
@@ -682,8 +842,14 @@ export default function AdminPage() {
             </motion.div>
           )}
 
-          {activeTab === 'seatmap' && (
-            <motion.div key="seatmap" variants={contentVariants} initial="initial" animate="animate" exit="exit">
+          {activeTab === "seatmap" && (
+            <motion.div
+              key="seatmap"
+              variants={contentVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
               <SeatMapTab
                 profiles={profiles}
                 presenceSet={presenceSet}
@@ -695,9 +861,20 @@ export default function AdminPage() {
             </motion.div>
           )}
 
-          {activeTab === 'reports' && (
-            <motion.div key="reports" variants={contentVariants} initial="initial" animate="animate" exit="exit">
-              <ReportsTab voteResults={voteResults} voteLogs={voteLogs} reportsLoading={reportsLoading} exportReportsCsv={exportReportsCsv} />
+          {activeTab === "reports" && (
+            <motion.div
+              key="reports"
+              variants={contentVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <ReportsTab
+                voteResults={voteResults}
+                voteLogs={voteLogs}
+                reportsLoading={reportsLoading}
+                exportReportsCsv={exportReportsCsv}
+              />
             </motion.div>
           )}
         </AnimatePresence>

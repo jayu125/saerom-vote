@@ -404,7 +404,7 @@ function PreMeetingPhase({
           animate={{ opacity: [0.85, 1, 0.85] }}
           transition={{ duration: 4, repeat: Infinity }}
         >
-          SAEROM VOTING
+          대위원회
         </motion.h1>
         <motion.p
           initial={{ opacity: 0 }}
