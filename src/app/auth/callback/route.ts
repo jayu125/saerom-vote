@@ -22,7 +22,7 @@ export async function GET(request: Request) {
                 cookieStore.set(name, value, options),
               );
             } catch {
-              /* Server Component */
+              /* Server Component context */
             }
           },
         },
@@ -41,29 +41,18 @@ export async function GET(request: Request) {
       }
 
       const serviceClient = await createServiceClient();
-
-      // 1. 프로필 조회
       const { data: profile } = await serviceClient
         .from("profiles")
         .select("id")
         .eq("email", user.email)
         .maybeSingle();
 
-      if (profile) {
-        if (profile.id !== user.id) {
-          await serviceClient
-            .from("profiles")
-            .update({ id: user.id })
-            .eq("email", user.email);
-        }
-      } else {
-        // 2. [복구] 프로필이 없는 경우 가입 요청 생성
+      if (!profile) {
         const { data: existingReq } = await serviceClient
           .from("registration_requests")
           .select("id")
           .eq("email", user.email)
           .maybeSingle();
-
         if (!existingReq) {
           const userName =
             user.user_metadata?.full_name || user.email.split("@")[0];
@@ -82,6 +71,5 @@ export async function GET(request: Request) {
       return response;
     }
   }
-
   return NextResponse.redirect(`${origin}/?error=auth`);
 }
