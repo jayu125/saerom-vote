@@ -189,38 +189,7 @@ function MeetingContent() {
           .then(({ data }) => setHasAskedQuestion(!!data));
       }
     }
-  }, [phase, meetingState?.current_agenda_id, profile, supabase, router]);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel("attendee-sync")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "meeting_state" },
-        (p) => {
-          if (p.new) setMeetingState(p.new as MeetingState);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "questions" },
-        () => {
-          if (profile && meetingState?.current_agenda_id)
-            supabase
-              .from("questions")
-              .select("id")
-              .eq("agenda_id", meetingState.current_agenda_id)
-              .eq("user_id", profile.id)
-              .in("status", ["waiting", "speaking"])
-              .maybeSingle()
-              .then(({ data }) => setHasAskedQuestion(!!data));
-        },
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [supabase, profile, meetingState?.current_agenda_id]);
+  }, [phase, meetingState?.current_agenda_id, profile, supabase]);
 
   useEffect(() => {
     if (!agenda?.pdf_url) {
@@ -272,8 +241,9 @@ function MeetingContent() {
         const page = await pdf.getPage(i + 1);
         const raw = page.getViewport({ scale: 1 });
         const fitScale = (containerWidth * 0.94) / raw.width;
-        const dpr = Math.min(window.devicePixelRatio || 1, 3);
-        const viewport = page.getViewport({ scale: fitScale * dpr });
+        const viewport = page.getViewport({
+          scale: fitScale * Math.min(window.devicePixelRatio || 1, 2),
+        });
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         const baseW = raw.width * fitScale;
@@ -348,12 +318,6 @@ function MeetingContent() {
     }
   }, []);
 
-  const resetZoom = () => {
-    setScale(1);
-    if (scrollRef.current)
-      scrollRef.current.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-  };
-
   const submitVote = async (choice: "PRO" | "CON", reason?: string) => {
     if (hasVoted || voting || !meetingState?.current_agenda_id) return;
     setVoting(true);
@@ -402,36 +366,43 @@ function MeetingContent() {
 
   if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#05070A]">
-        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      <div className="min-h-screen meeting-hud-dotgrid flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
       </div>
     );
+
   if (authError)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#05070A] p-6 text-center">
-        <div className="bg-white/5 border border-white/10 p-10 rounded-3xl space-y-6">
+      <div className="min-h-screen meeting-hud-dotgrid flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="meeting-hud-surface rounded-[32px] p-10 max-w-md w-full text-center space-y-6"
+        >
           <Shield className="w-12 h-12 text-red-500 mx-auto" />
-          <h2 className="text-xl font-bold">접근 차단</h2>
-          <p className="text-sm opacity-50">{authError}</p>
+          <h2 className="text-xl font-bold text-red-500">접근 차단됨</h2>
+          <p className="text-sm text-slate-400">{authError}</p>
           <button
             onClick={() => router.push("/")}
-            className="w-full py-3 rounded-2xl bg-blue-600 font-bold cursor-pointer transition-colors hover:bg-blue-500"
+            className="w-full py-3 rounded-2xl bg-cyan-600 font-bold cursor-pointer"
           >
             돌아가기
           </button>
-        </div>
+        </motion.div>
       </div>
     );
 
-  const attendeePdfHidden =
-    (phase === "IDLE" && !!meetingState?.current_agenda_id) ||
-    phase === "RESULT";
   const stationMeta = profile?.assigned_seat
     ? `[ STATION: ${profile.assigned_seat.replace(/-/g, "_").toUpperCase()} ]`
     : "[ STATION: — ]";
+  const attendeePdfHidden =
+    (phase === "IDLE" && !!meetingState?.current_agenda_id) ||
+    phase === "RESULT";
 
   return (
-    <div className="h-screen w-screen overflow-hidden relative bg-[#05070A] text-white">
+    <div className="h-screen w-screen overflow-hidden relative meeting-hud-dotgrid text-white font-sans">
+      <div className="meeting-hud-scanline pointer-events-none" />
+
       <div
         ref={scrollRef}
         className={`fixed inset-0 z-[2] overflow-auto transition-all ${scale === 1 ? "snap-y snap-mandatory" : ""}`}
@@ -453,7 +424,7 @@ function MeetingContent() {
                   ref={(el) => {
                     canvasRefs.current[i] = el;
                   }}
-                  className="select-none rounded-lg mx-auto shadow-2xl bg-white"
+                  className="select-none rounded-lg mx-auto shadow-2xl bg-white border border-white/10"
                 />
               </div>
             ))}
@@ -465,23 +436,22 @@ function MeetingContent() {
         <motion.div
           initial={{ opacity: 0, y: -18 }}
           animate={{ opacity: 1, y: 0 }}
-          className="pointer-events-auto w-full max-w-xl rounded-full bg-black/60 backdrop-blur-xl border border-white/10 px-4 py-2.5 flex items-center justify-between"
+          transition={HUD_SPRING}
+          className="pointer-events-auto w-full max-w-xl rounded-full meeting-hud-surface px-4 py-2.5 flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-              <Vote className="w-4 h-4 text-blue-400" />
+            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
+              <Vote className="w-4 h-4 text-cyan-400" />
             </div>
-            <div className="text-left font-sans">
-              <p className="text-[8px] font-mono opacity-50 leading-tight">
-                {stationMeta}
-              </p>
-              <p className="text-[11px] font-bold truncate">
+            <div className="text-left leading-tight">
+              <p className="text-[8px] font-mono opacity-50">{stationMeta}</p>
+              <p className="text-[11px] font-bold">
                 대위원회 · {profile?.name}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono px-2.5 py-1 rounded-full border border-white/10 uppercase">
+            <span className="text-[9px] font-mono px-2.5 py-1 rounded-full border border-white/10 uppercase bg-white/5">
               {phase}
             </span>
             <button
@@ -489,7 +459,7 @@ function MeetingContent() {
                 supabase.auth.signOut();
                 router.push("/");
               }}
-              className="p-2 opacity-50 hover:opacity-100 cursor-pointer transition-opacity"
+              className="p-2 opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -501,19 +471,22 @@ function MeetingContent() {
         <div className="fixed top-[5.25rem] right-3 z-30 flex flex-col gap-2">
           <button
             onClick={() => setScale((s) => Math.min(s + 0.5, 5))}
-            className="w-10 h-10 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center cursor-pointer hover:text-blue-400 transition-colors"
+            className="meeting-hud-surface w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer hover:text-cyan-400 transition-colors"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
           <button
             onClick={() => setScale((s) => Math.max(s - 0.5, 1))}
-            className="w-10 h-10 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center cursor-pointer hover:text-blue-400 transition-colors"
+            className="meeting-hud-surface w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer hover:text-cyan-400 transition-colors"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
           <button
-            onClick={resetZoom}
-            className="w-10 h-10 rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center cursor-pointer hover:text-blue-400 transition-colors"
+            onClick={() => {
+              setScale(1);
+              scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            className="meeting-hud-surface w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer hover:text-cyan-400 transition-colors"
           >
             <Maximize className="w-4 h-4" />
           </button>
@@ -529,47 +502,49 @@ function MeetingContent() {
                   key="qa"
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -10, opacity: 0 }}
+                  transition={DOCK_SPRING}
                 >
-                  {hasAskedQuestion ? (
-                    <div className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-center">
-                      <Check className="w-6 h-6 mx-auto mb-1 text-emerald-400" />
-                      <p className="text-sm font-bold text-emerald-400">
+                  {hasAskedQuestion || questionSuccess ? (
+                    <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-center">
+                      <Check className="w-6 h-6 mx-auto mb-1 text-cyan-400" />
+                      <p className="text-sm font-bold text-cyan-400">
                         질문 신청 완료
                       </p>
                     </div>
                   ) : showMemoInput ? (
-                    <div className="space-y-3 bg-black/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10">
+                    <div className="space-y-3 bg-black/60 backdrop-blur-2xl p-5 rounded-3xl border border-white/10 shadow-2xl">
                       <div className="flex justify-between items-center">
-                        <p className="text-xs font-bold text-blue-400 font-sans">
-                          [ 질문 내용 입력 ]
+                        <p className="text-[10px] font-bold text-cyan-400 font-mono tracking-widest">
+                          [ QUESTION_MEMO_INPUT ]
                         </p>
                         <button
                           onClick={() => setShowMemoInput(false)}
-                          className="text-xs opacity-50 cursor-pointer"
+                          className="text-[10px] opacity-50 cursor-pointer uppercase font-mono"
                         >
-                          접기
+                          Collapse
                         </button>
                       </div>
                       <textarea
                         value={questionMemo}
                         onChange={(e) => setQuestionMemo(e.target.value)}
                         placeholder="질문을 입력하세요..."
-                        className="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-3 text-sm focus:outline-none"
+                        className="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:border-cyan-500/50 transition-colors"
                       />
                       <button
                         onClick={submitQuestion}
                         disabled={askingQuestion}
-                        className="w-full py-3 rounded-xl bg-blue-600 font-bold cursor-pointer transition-colors hover:bg-blue-500"
+                        className="w-full py-3 rounded-xl bg-cyan-600 font-bold cursor-pointer transition-colors hover:bg-cyan-500"
                       >
-                        {askingQuestion ? "처리 중..." : "질문 신청하기"}
+                        {askingQuestion ? "Processing..." : "Submit Question"}
                       </button>
                     </div>
                   ) : (
                     <button
                       onClick={() => setShowMemoInput(true)}
-                      className="w-full py-4 rounded-full bg-white/10 backdrop-blur-xl border border-white/10 font-bold flex items-center justify-center gap-3 cursor-pointer transition-all active:scale-95"
+                      className="w-full py-4 rounded-full bg-white/5 backdrop-blur-xl border border-white/10 font-bold flex items-center justify-center gap-3 cursor-pointer hover:bg-white/10 transition-all active:scale-[0.98] shadow-xl"
                     >
-                      <MessageSquare className="w-5 h-5 text-blue-400" />{" "}
+                      <MessageSquare className="w-5 h-5 text-cyan-400" />{" "}
                       질문하기 <ChevronRight className="w-4 h-4 opacity-30" />
                     </button>
                   )}
@@ -580,23 +555,27 @@ function MeetingContent() {
                   key="vote"
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -10, opacity: 0 }}
+                  transition={DOCK_SPRING}
                 >
-                  {hasVoted ? (
-                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-center">
-                      <Check className="w-8 h-8 mx-auto mb-1 text-blue-400" />
-                      <p className="text-sm font-bold opacity-50">투표 완료</p>
+                  {hasVoted || voteSuccess ? (
+                    <div className="p-5 rounded-2xl bg-white/5 border border-white/10 text-center backdrop-blur-lg">
+                      <Check className="w-10 h-10 mx-auto mb-1 text-cyan-400" />
+                      <p className="text-sm font-bold opacity-50 uppercase tracking-widest font-mono">
+                        Ballot Submitted
+                      </p>
                     </div>
                   ) : (
-                    <div className="flex gap-3">
+                    <div className="flex gap-4">
                       <button
                         onClick={() => submitVote("PRO")}
-                        className="flex-1 py-4 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 font-bold cursor-pointer transition-colors hover:bg-emerald-500/30"
+                        className="flex-1 py-4 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500/30 transition-colors"
                       >
                         찬성
                       </button>
                       <button
                         onClick={() => setShowConReasonSheet(true)}
-                        className="flex-1 py-4 rounded-2xl bg-red-600/20 border border-red-500/40 text-red-400 font-bold cursor-pointer transition-colors hover:bg-red-500/30"
+                        className="flex-1 py-4 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 font-bold cursor-pointer hover:bg-red-500/30 transition-colors"
                       >
                         반대
                       </button>
@@ -617,36 +596,46 @@ function MeetingContent() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowConReasonSheet(false)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md"
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={DOCK_SPRING}
-              className="fixed bottom-0 left-0 right-0 z-50 p-6 bg-[#0F1116] rounded-t-[40px] border-t border-white/10 font-sans"
+              className="fixed bottom-0 left-0 right-0 z-50 p-8 bg-[#0F1116] rounded-t-[40px] border-t border-white/10 shadow-2xl"
             >
-              <h3 className="text-lg font-bold mb-4">
-                반대 사유 입력{" "}
-                <span className="text-red-500 text-xs">(필수)</span>
-              </h3>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold">
+                  반대 사유 입력{" "}
+                  <span className="text-red-500 text-xs font-normal ml-2">
+                    (필수)
+                  </span>
+                </h3>
+                <button
+                  onClick={() => setShowConReasonSheet(false)}
+                  className="p-2 opacity-50 cursor-pointer font-mono text-[10px]"
+                >
+                  CLOSE
+                </button>
+              </div>
               <textarea
                 value={conReason}
                 onChange={(e) => setConReason(e.target.value)}
                 placeholder="반대하시는 이유를 상세히 적어주세요."
-                className="w-full h-32 bg-white/5 border border-white/10 rounded-2xl p-4 text-sm mb-4 focus:outline-none"
+                className="w-full h-40 bg-white/5 border border-white/10 rounded-2xl p-4 text-sm mb-6 focus:outline-none focus:border-red-500/50"
               />
-              <div className="flex gap-3">
+              <div className="flex gap-4">
                 <button
                   onClick={() => setShowConReasonSheet(false)}
-                  className="flex-1 py-4 rounded-2xl bg-white/5 font-bold cursor-pointer transition-colors hover:bg-white/10"
+                  className="flex-1 py-4 rounded-2xl bg-white/5 font-bold cursor-pointer hover:bg-white/10"
                 >
                   취소
                 </button>
                 <button
                   onClick={() => submitVote("CON", conReason)}
                   disabled={!conReason.trim()}
-                  className="flex-1 py-4 rounded-2xl bg-red-600 font-bold disabled:opacity-30 cursor-pointer transition-colors hover:bg-red-500"
+                  className="flex-1 py-4 rounded-2xl bg-red-600 font-bold cursor-pointer transition-colors hover:bg-red-500 disabled:opacity-30"
                 >
                   투표 완료
                 </button>

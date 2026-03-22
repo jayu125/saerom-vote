@@ -4,12 +4,10 @@ import { createServerClient } from "@supabase/ssr";
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
-  // 1. /screen 경로는 즉시 통과
   if (pathname.startsWith("/screen")) {
     return NextResponse.next();
   }
 
-  // 2. 세션 확인을 위한 Supabase 클라이언트 설정
   let response = NextResponse.next({ request });
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,7 +32,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // 3. [핵심] 비로그인 유저가 /meeting 접근 시 파라미터를 'next' 보따리에 싸서 홈으로 보냄
+  // 비로그인 상태로 회의실 접근 시 경로 기억 후 리다이렉트
   if (!user && pathname.startsWith("/meeting")) {
     const nextDestination = pathname + search;
     const redirectUrl = request.nextUrl.clone();

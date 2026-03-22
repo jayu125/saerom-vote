@@ -22,7 +22,7 @@ export async function GET(request: Request) {
                 cookieStore.set(name, value, options),
               );
             } catch {
-              /* Server Component context */
+              /* Server Component */
             }
           },
         },
@@ -35,8 +35,6 @@ export async function GET(request: Request) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
-      // 도메인 제한: @saerom.hs.kr 만 허용
       if (!user?.email || !user.email.endsWith("@saerom.hs.kr")) {
         await supabase.auth.signOut();
         return NextResponse.redirect(`${origin}/?error=domain`);
@@ -44,7 +42,7 @@ export async function GET(request: Request) {
 
       const serviceClient = await createServiceClient();
 
-      // 1. 프로필 조회 및 ID 동기화
+      // 1. 프로필 조회
       const { data: profile } = await serviceClient
         .from("profiles")
         .select("id")
@@ -59,22 +57,24 @@ export async function GET(request: Request) {
             .eq("email", user.email);
         }
       } else {
-        // 2. 가입 요청 생성 (등록되지 않은 유저인 경우)
+        // 2. [복구] 프로필이 없는 경우 가입 요청 생성
         const { data: existingReq } = await serviceClient
           .from("registration_requests")
           .select("id")
           .eq("email", user.email)
           .maybeSingle();
+
         if (!existingReq) {
           const userName =
             user.user_metadata?.full_name || user.email.split("@")[0];
-          await serviceClient
-            .from("registration_requests")
-            .insert({ email: user.email, name: userName, status: "pending" });
+          await serviceClient.from("registration_requests").insert({
+            email: user.email,
+            name: userName,
+            status: "pending",
+          });
         }
       }
 
-      // [핵심] 성공 시 보따리에 들어있던 원래 목적지(?seat=... 포함)로 이동
       const response = NextResponse.redirect(`${origin}${next}`, {
         status: 303,
       });

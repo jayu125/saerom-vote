@@ -26,6 +26,7 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_SEAT_LAYOUT } from "@/lib/types";
 import { initPdfWorker } from "@/lib/pdf-utils";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -291,6 +292,7 @@ function SeatCell({ info, phase, flipDelay }: SeatCellProps) {
 
   useEffect(() => {
     if (phase === "RESULT" && info.voted) {
+      // 랜덤한 시점에 뒤집히도록 설정
       const timer = setTimeout(() => setFlipped(true), flipDelay);
       return () => clearTimeout(timer);
     }
@@ -457,7 +459,6 @@ function IdlePhase({
       exit={{ opacity: 0 }}
       className="flex h-full relative"
     >
-      {/* Main center content */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6 relative">
         <Particles />
 
@@ -495,7 +496,6 @@ function IdlePhase({
         </div>
       </div>
 
-      {/* Question sidebar */}
       {waitingQs.length > 0 && (
         <motion.div
           initial={{ opacity: 0, x: 40 }}
@@ -619,7 +619,7 @@ function IntroPhase({ agenda }: { agenda: Agenda | null }) {
         await page.render({ canvasContext: ctx, viewport, canvas } as any)
           .promise;
       }
-    }, 150); // 충분한 렌더링 지연 시간 확보
+    }, 150);
 
     return () => {
       cancelled = true;
@@ -749,7 +749,6 @@ function QaPhase({
             transition={{ type: "spring", stiffness: 200, damping: 20 }}
             className="relative flex flex-col items-center"
           >
-            {/* Pulsing rings */}
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="absolute w-56 h-56 rounded-full border-2 border-sky-400/60 animate-pulse-ring" />
               <span
@@ -820,9 +819,7 @@ function VotingPhase({
     >
       <div className="flex flex-col items-center w-full max-w-5xl gap-5">
         <div className="text-center w-full px-4">
-          <h2 className="text-3xl font-bold text-slate-900">
-            {agenda?.title}
-          </h2>
+          <h2 className="text-3xl font-bold text-slate-900">{agenda?.title}</h2>
           <p className="text-slate-600 mt-1">
             {timerSeconds !== null && timerSeconds <= 0
               ? "집계 중..."
@@ -907,10 +904,12 @@ function ResultPhase({
     [seatGrid],
   );
 
+  // [개선] 2~3초 연출을 위해 각 카드에 0~2.3초의 랜덤 딜레이 부여
   const flipDelayMap = useMemo(() => {
     const map = new Map<string, number>();
     seatGrid.forEach((s) => {
-      map.set(s.seat, Math.random() * 1500);
+      // 0ms ~ 2300ms 사이의 랜덤 지연 시간
+      map.set(s.seat, Math.random() * 2300);
     });
     return map;
   }, [seatGrid]);
@@ -923,7 +922,8 @@ function ResultPhase({
   const conPct = total > 0 ? (conCount / total) * 100 : 0;
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowResults(true), 2800);
+    // 모든 카드가 뒤집힐 시간을 고려하여 하단 결과창 표시 시점 조정 (3초)
+    const timer = setTimeout(() => setShowResults(true), 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -1112,7 +1112,7 @@ export default function ScreenPage() {
   const presenceSet = usePresence("saerom-presence");
   const seatLayout: SeatLayout =
     meetingState?.seat_layout ?? DEFAULT_SEAT_LAYOUT;
-  // ------ fetch meeting state ------
+
   const fetchMeetingState = useCallback(async () => {
     const { data } = await supabase
       .from("meeting_state")
@@ -1122,7 +1122,6 @@ export default function ScreenPage() {
     if (data) setMeetingState(data as MeetingState);
   }, [supabase]);
 
-  // ------ fetch agenda ------
   const fetchAgenda = useCallback(
     async (agendaId: string) => {
       const { data } = await supabase
@@ -1135,7 +1134,6 @@ export default function ScreenPage() {
     [supabase],
   );
 
-  // ------ fetch speaker ------
   const fetchSpeaker = useCallback(
     async (speakerId: string) => {
       const { data } = await supabase
@@ -1148,7 +1146,6 @@ export default function ScreenPage() {
     [supabase],
   );
 
-  // ------ fetch attendee profiles ------
   const fetchProfiles = useCallback(async () => {
     const { data } = await supabase
       .from("profiles")
@@ -1158,7 +1155,6 @@ export default function ScreenPage() {
     if (data) setProfiles(data as Profile[]);
   }, [supabase]);
 
-  // ------ fetch votes for current agenda ------
   const fetchVotes = useCallback(
     async (agendaId: string) => {
       const { data } = await supabase
@@ -1170,7 +1166,6 @@ export default function ScreenPage() {
     [supabase],
   );
 
-  // ------ fetch questions ------
   const fetchQuestions = useCallback(
     async (agendaId: string) => {
       const { data } = await supabase
@@ -1185,7 +1180,6 @@ export default function ScreenPage() {
     [supabase],
   );
 
-  // ------ timer ------
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (!meetingState?.timer_end_at) {
@@ -1209,7 +1203,6 @@ export default function ScreenPage() {
     };
   }, [meetingState?.timer_end_at]);
 
-  // ------ initial loads & reactions to meeting state changes ------
   useEffect(() => {
     fetchMeetingState();
     fetchProfiles();
@@ -1235,7 +1228,6 @@ export default function ScreenPage() {
     fetchQuestions,
   ]);
 
-  // ------ Polling fallback: Realtime 미전달 시에도 meeting_state 동기화 (2.5초마다, 탭 포커스 시 즉시)
   useEffect(() => {
     if (typeof document === "undefined") return;
     const poll = async () => {
@@ -1255,7 +1247,7 @@ export default function ScreenPage() {
     };
     const onVisible = () => poll();
     document.addEventListener("visibilitychange", onVisible);
-    poll(); // 초기 1회
+    poll();
     const iv = setInterval(poll, 2500);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
@@ -1263,7 +1255,6 @@ export default function ScreenPage() {
     };
   }, [supabase]);
 
-  // ------ realtime subscriptions ------
   useEffect(() => {
     const channel = supabase
       .channel("screen-realtime")
@@ -1317,9 +1308,8 @@ export default function ScreenPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase]); // meetingState 의존 제거 → 구독 유지, 실시간 이벤트 누락 방지
+  }, [supabase]);
 
-  // ------ build seat grid ------
   const seatGrid: SeatVoteInfo[] = useMemo(() => {
     const sorted = [...profiles].sort((a, b) => {
       const pa = parseSeat(a.assigned_seat);
@@ -1339,16 +1329,13 @@ export default function ScreenPage() {
     });
   }, [profiles, votes, presenceSet]);
 
-  // ------ render ------
   return (
     <div className="screen-page-light h-screen w-screen overflow-hidden relative text-slate-900">
-      {/* Ambient gradient blobs */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-sky-200/45 rounded-full blur-[180px]" />
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-200/40 rounded-full blur-[160px]" />
       </div>
 
-      {/* Phase views */}
       <AnimatePresence mode="wait">
         {phase === "IDLE" && !meetingState?.current_agenda_id && (
           <PreMeetingPhase
