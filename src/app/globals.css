@@ -1,0 +1,405 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg-primary: #0A0C10;
+  --color-bg-secondary: #12141A;
+  --color-bg-card: #1A1D26;
+  --color-bg-glass: rgba(26, 29, 38, 0.6);
+  --color-border-glass: rgba(255, 255, 255, 0.08);
+  --color-accent-blue: #3B82F6;
+  --color-accent-cyan: #06B6D4;
+  --color-accent-green: #10B981;
+  --color-accent-red: #EF4444;
+  --color-accent-amber: #F59E0B;
+  --color-accent-purple: #8B5CF6;
+  --color-text-primary: #F1F5F9;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #64748B;
+  --font-sans: 'Pretendard', var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+.glass {
+  background: var(--color-bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border-glass);
+}
+
+.glass-strong {
+  background: rgba(26, 29, 38, 0.85);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3), 0 0 60px rgba(59, 130, 246, 0.1);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3), 0 0 60px rgba(16, 185, 129, 0.1);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3), 0 0 60px rgba(239, 68, 68, 0.1);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #3B82F6, #06B6D4, #8B5CF6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.seat-flip {
+  perspective: 800px;
+}
+
+.seat-flip-inner {
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+}
+
+.seat-flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.seat-flip-front,
+.seat-flip-back {
+  backface-visibility: hidden;
+}
+
+.seat-flip-back {
+  transform: rotateY(180deg);
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  80%, 100% { transform: scale(2); opacity: 0; }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* ── Meeting attendee: Precision Tactical HUD (page-local utilities) ── */
+.meeting-hud-dotgrid {
+  background-color: #05070a;
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.055) 0.5px,
+    transparent 0.5px
+  );
+  background-size: 24px 24px;
+}
+
+@keyframes meeting-hud-scan {
+  0% {
+    left: -8%;
+    opacity: 0;
+  }
+  4% {
+    opacity: 0.85;
+  }
+  96% {
+    opacity: 0.85;
+  }
+  100% {
+    left: 108%;
+    opacity: 0;
+  }
+}
+
+.meeting-hud-scanline {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 8%,
+    rgba(6, 182, 212, 0.28) 50%,
+    transparent 92%
+  );
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.12);
+  animation: meeting-hud-scan 9.5s linear infinite;
+}
+
+.meeting-hud-surface {
+  background: rgba(13, 17, 23, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.meeting-hud-surface--flat {
+  box-shadow: none;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+
+.meeting-hud-energy {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.meeting-hud-energy::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  z-index: 0;
+  transition: height 0.42s cubic-bezier(0, 0.55, 0.45, 1);
+}
+
+.meeting-hud-energy:hover:not(:disabled)::before,
+.meeting-hud-energy:focus-visible:not(:disabled)::before {
+  height: 100%;
+}
+
+.meeting-hud-energy:active:not(:disabled)::before {
+  height: 100%;
+}
+
+.meeting-hud-energy--pro::before {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.meeting-hud-energy--con::before {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.meeting-hud-energy--amber::before {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.meeting-hud-energy--cyan::before {
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.meeting-hud-energy--neutral::before {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Bottom tactile dock (meeting interaction panel) */
+.meeting-hud-dock-gradient {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(52vh, 480px);
+  pointer-events: none;
+  z-index: 38;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.8) 0%,
+    rgba(0, 0, 0, 0.35) 45%,
+    transparent 100%
+  );
+}
+
+.meeting-hud-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  padding: 16px 20px calc(16px + env(safe-area-inset-bottom, 0px)) 20px;
+  background: rgba(10, 12, 18, 0.94);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+  border-radius: 24px 24px 0 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 -20px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Tactical buttons: fast circOut fill + pulse at full hover */
+.meeting-hud-energy-tactile::before {
+  transition: height 0.2s cubic-bezier(0, 0.55, 0.45, 1);
+}
+
+.meeting-hud-energy-tactile:hover:not(:disabled)::before,
+.meeting-hud-energy-tactile:focus-visible:not(:disabled)::before {
+  animation: meeting-hud-energy-pulse 0.4s ease-out 0.2s 1;
+}
+
+.meeting-hud-energy-tactile:active:not(:disabled)::before {
+  animation: none;
+}
+
+@keyframes meeting-hud-energy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.meeting-hud-energy-tactile.meeting-hud-energy--pro::before {
+  background: rgb(16, 185, 129);
+}
+
+.meeting-hud-energy-tactile.meeting-hud-energy--con::before {
+  background: rgb(239, 68, 68);
+}
+
+.meeting-hud-energy-tactile.meeting-hud-energy--amber::before {
+  background: rgb(245, 158, 11);
+}
+
+.meeting-hud-energy-tactile.meeting-hud-energy--neutral::before {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Con-reason system sheet dimmer */
+.meeting-hud-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.meeting-hud-sheet-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 46;
+  height: 60vh;
+  max-height: 60vh;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)) 20px;
+  background: rgba(10, 12, 18, 0.97);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+  border-radius: 24px 24px 0 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 -24px 48px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Screen page (/screen): Slate White + Midnight Navy ── */
+.screen-page-light {
+  --color-bg-primary: #f8fafc;
+  --color-bg-secondary: #f1f5f9;
+  --color-bg-card: #e2e8f0;
+  --color-bg-glass: rgba(255, 255, 255, 0.94);
+  --color-border-glass: rgba(15, 23, 42, 0.1);
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  /* 최소 굵기 600 (명시적으로 더 굵은 유틸은 그대로) */
+  font-weight: 600;
+  color: #0f172a;
+  background-color: #f8fafc;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(15, 23, 42, 0.08) 1px,
+    transparent 0
+  );
+  background-size: 22px 22px;
+  scrollbar-color: rgba(15, 23, 42, 0.14) transparent;
+}
+
+.screen-page-light .glass-strong {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    0 10px 40px rgba(15, 23, 42, 0.06);
+}
+
+.screen-page-light .glass {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05);
+}
+
+.screen-page-light .glow-blue {
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.2),
+    0 0 0 1px rgba(37, 99, 235, 0.15);
+}
+
+.screen-page-light .glow-green {
+  box-shadow: 0 2px 12px rgba(22, 163, 74, 0.22),
+    0 0 0 1px rgba(22, 163, 74, 0.14);
+}
+
+.screen-page-light .glow-red {
+  box-shadow: 0 2px 12px rgba(220, 38, 38, 0.2),
+    0 0 0 1px rgba(220, 38, 38, 0.12);
+}
+
+/* Heading gradient anchored to midnight navy / slate blue */
+.screen-page-light .gradient-text {
+  background: linear-gradient(135deg, #0f172a, #1d4ed8, #0e7490);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.screen-page-light .animate-pulse-ring {
+  animation: pulse-ring-screen 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes pulse-ring-screen {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.85;
+  }
+  80%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.screen-page-light .font-thin,
+.screen-page-light .font-extralight,
+.screen-page-light .font-light,
+.screen-page-light .font-normal,
+.screen-page-light .font-medium {
+  font-weight: 600;
+}

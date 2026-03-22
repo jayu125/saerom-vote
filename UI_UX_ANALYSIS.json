@@ -1,0 +1,378 @@
+{
+  "$schema": "SAEROM Voting System UI/UX 및 애니메이션/인터랙션 분석",
+  "version": "1.0",
+  "design_tokens": {
+    "colors": {
+      "bg_primary": "#0A0C10",
+      "bg_secondary": "#12141A",
+      "bg_glass": "rgba(26,29,38,0.6)",
+      "border_glass": "rgba(255,255,255,0.08)",
+      "accent_blue": "#3B82F6",
+      "accent_cyan": "#06B6D4",
+      "accent_green": "#10B981",
+      "accent_red": "#EF4444",
+      "accent_amber": "#F59E0B",
+      "accent_purple": "#8B5CF6",
+      "text_primary": "#F1F5F9",
+      "text_secondary": "#94A3B8",
+      "text_muted": "#64748B"
+    },
+    "effects": {
+      "glass": "backdrop-filter: blur(20px), border: 1px solid border_glass",
+      "glass_strong": "backdrop-filter: blur(40px), border: 1px solid rgba(255,255,255,0.12)",
+      "glow_blue": "box-shadow: 0 0 20px rgba(59,130,246,0.3), 0 0 60px rgba(59,130,246,0.1)",
+      "glow_green": "box-shadow: 0 0 20px rgba(16,185,129,0.3), 0 0 60px rgba(16,185,129,0.1)",
+      "glow_red": "box-shadow: 0 0 20px rgba(239,68,68,0.3), 0 0 60px rgba(239,68,68,0.1)",
+      "gradient_text": "linear-gradient(135deg, #3B82F6, #06B6D4, #8B5CF6) → background-clip: text"
+    },
+    "custom_css_animations": {
+      "animate_spin": "Tailwind 기본 (로딩 스피너)",
+      "animate_pulse_ring": "@keyframes pulse-ring: scale(0.8)→scale(2), opacity 1→0, 1.5s infinite cubic-bezier(0.215,0.61,0.355,1)",
+      "animate_float": "@keyframes float: translateY(0)→-10px→0, 3s ease-in-out infinite",
+      "animate_ping": "Tailwind: 펄스 효과 (연결 상태 표시)"
+    }
+  },
+
+  "pages": {
+    "home": {
+      "route": "/",
+      "layout": {
+        "structure": "중앙 정렬, 배경 그라데이션 블러(absolute divs), 그리드 패턴 오버레이(opacity 0.03)",
+        "background_elements": [
+          "absolute top-1/4 left-1/4: accent-blue/10 blur-[120px] 96x96",
+          "absolute bottom-1/4 right-1/4: accent-purple/10 blur-[120px] 96x96",
+          "absolute center: accent-cyan/5 blur-[150px] 600x600"
+        ]
+      },
+      "states": {
+        "loading": {
+          "elements": [
+            {
+              "id": "loading_container",
+              "type": "motion.div",
+              "animation": {
+                "initial": { "opacity": 0, "scale": 0.8 },
+                "animate": { "opacity": 1, "scale": 1 }
+              },
+              "children": [
+                { "id": "spinner", "type": "div", "class": "animate-spin", "size": "w-12 h-12", "desc": "파란 테두리 원형 스피너" },
+                { "id": "loading_text", "type": "p", "text": "로딩 중..." }
+              ]
+            }
+          ]
+        },
+        "active": {
+          "elements": [
+            { "id": "main_container", "motion": { "initial": { "opacity": 0, "y": 40 }, "animate": { "opacity": 1, "y": 0 }, "transition": { "duration": 0.8, "ease": [0.16, 1, 0.3, 1] } } },
+            { "id": "logo", "motion": { "initial": { "scale": 0 }, "animate": { "scale": 1 }, "transition": { "delay": 0.2, "type": "spring", "stiffness": 200, "damping": 15 } }, "style": "20x20 gradient glow-blue rounded-2xl" },
+            { "id": "title", "motion": { "initial": { "opacity": 0, "y": 20 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.3 }, "class": "gradient-text text-4xl font-bold" },
+            { "id": "subtitle", "motion": { "initial": { "opacity": 0 }, "animate": { "opacity": 1 }, "delay": 0.4 } },
+            { "id": "profile_card", "motion": { "initial": { "opacity": 0, "y": 20 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.5 }, "class": "glass rounded-2xl p-5" },
+            { "id": "nav_button", "type": "motion.a", "interaction": { "whileHover": { "scale": 1.02 }, "whileTap": { "scale": 0.98 } }, "style": "gradient blue→cyan, glow-blue" },
+            { "id": "logout_button", "type": "motion.button", "interaction": { "whileTap": { "scale": 0.98 } }, "class": "glass text-text-secondary hover:text-text-primary" }
+          ]
+        },
+        "pending": {
+          "elements": [
+            { "id": "pending_container", "motion": { "initial": { "opacity": 0, "y": 20 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.5 } },
+            { "icon": "Clock", "size": "w-10 h-10", "color": "accent-amber" },
+            { "id": "logout_button", "interaction": { "whileTap": { "scale": 0.98 } } }
+          ]
+        },
+        "rejected": {
+          "elements": [
+            { "id": "error_box", "class": "bg-accent-red/10 border-accent-red/20" },
+            { "id": "logout_button", "interaction": { "whileTap": { "scale": 0.98 } } }
+          ]
+        },
+        "guest": {
+          "elements": [
+            { "id": "error_message", "condition": "error param 존재", "motion": { "initial": { "opacity": 0, "scale": 0.95 }, "animate": { "opacity": 1, "scale": 1 } } },
+            { "id": "google_login_button", "motion": { "initial": { "opacity": 0, "y": 20 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.5 }, "interaction": { "whileHover": { "scale": 1.02 }, "whileTap": { "scale": 0.98 } }, "onClick": "handleGoogleLogin" },
+            { "id": "domain_hint", "motion": { "initial": { "opacity": 0 }, "animate": { "opacity": 1 }, "delay": 0.6 } }
+          ]
+        }
+      }
+    },
+
+    "meeting": {
+      "route": "/meeting?seat=X",
+      "layout": {
+        "structure": "h-screen w-screen overflow-hidden, z-index layers: scroll(0), status_bar(30), zoom(30), interaction(40)",
+        "layers": [
+          { "z": 0, "id": "pdf_scroll_area", "touch": "onTouchStart, onTouchMove (pinch zoom)" },
+          { "z": 30, "id": "top_status_bar", "class": "glass-strong px-4 py-2.5" },
+          { "z": 30, "id": "zoom_controls", "position": "fixed top-14 right-3" },
+          { "z": 40, "id": "floating_interaction", "position": "fixed bottom-0 p-4 pb-6" }
+        ]
+      },
+      "states": {
+        "loading": { "element": "Loader2 animate-spin w-8 h-8" },
+        "auth_error": {
+          "elements": [
+            { "id": "error_card", "motion": { "initial": { "opacity": 0, "y": 20 }, "animate": { "opacity": 1, "y": 0 } }, "class": "glass-strong rounded-3xl" },
+            { "icon": "Shield", "color": "accent-red" },
+            { "id": "back_button", "onClick": "router.push('/')" }
+          ]
+        },
+        "pre_meeting": {
+          "elements": [
+            { "id": "waiting_card", "motion": { "initial": { "opacity": 0, "y": 40 }, "animate": { "opacity": 1, "y": 0 }, "exit": { "opacity": 0, "y": 40 } } },
+            { "id": "logo_pulse", "motion": { "animate": { "scale": [1, 1.05, 1] }, "transition": { "duration": 3, "repeat": "Infinity" } },
+            { "text": "회의 시작 대기 중" }
+          ]
+        },
+        "question_ui": {
+          "elements": [
+            { "id": "qa_action", "motion": { "initial": { "opacity": 0, "y": 40 }, "animate": { "opacity": 1, "y": 0 }, "transition": { "type": "spring", "stiffness": 300, "damping": 25 } } },
+            { "id": "question_success", "motion": { "initial": { "scale": 0.9 }, "animate": { "scale": 1 } }, "icon": "Check accent-green" },
+            { "id": "question_button", "interaction": { "disabled": "askingQuestion" }, "class": "hover:bg-accent-amber/20 transition-colors" },
+            { "id": "memo_toggle", "onClick": "setShowMemoInput" }
+          ]
+        },
+        "voting": {
+          "elements": [
+            { "id": "vote_action", "motion": { "initial": { "opacity": 0, "y": 40 }, "animate": { "opacity": 1, "y": 0 } } },
+            { "id": "vote_success", "motion": { "initial": { "scale": 0.9 }, "animate": { "scale": 1 } }, "glow": "glow-green or glow-red" },
+            { "id": "check_icon", "motion": { "initial": { "scale": 0 }, "animate": { "scale": 1 }, "transition": { "type": "spring", "stiffness": 300, "damping": 15 } } },
+            { "id": "pro_button", "interaction": { "whileTap": { "scale": 0.95 } }, "class": "border-accent-green/20 hover:bg-accent-green/5" },
+            { "id": "con_button", "interaction": { "whileTap": { "scale": 0.95 } }, "class": "border-accent-red/20 hover:bg-accent-red/5" },
+            { "id": "timer_expired", "icon": "Timer animate-pulse" }
+          ]
+        },
+        "result": {
+          "elements": [
+            { "id": "result_info", "motion": { "initial": { "opacity": 0, "y": 40 }, "animate": { "opacity": 1, "y": 0 } } },
+            { "class": "glass-strong rounded-2xl" }
+          ]
+        }
+      },
+      "interactions": {
+        "zoom_in": "glass w-9 h-9 rounded-xl hover:text-white",
+        "zoom_out": "동일",
+        "reset_zoom": "동일",
+        "logout": "p-1.5 rounded-lg hover:bg-white/10"
+      }
+    },
+
+    "screen": {
+      "route": "/screen",
+      "public": true,
+      "layout": {
+        "structure": "AnimatePresence mode=wait, phase별 전환"
+      },
+      "components": {
+        "Particles": {
+          "type": "배경 파티클",
+          "count": "동적 생성",
+          "animation": { "y": [0, -120, 0], "x": [0, "xDrift", 0], "opacity": ["opacity", "opacity*2", "opacity"], "repeat": "Infinity", "ease": "easeInOut" }
+        },
+        "Confetti": {
+          "type": "결과 축하",
+          "condition": "passed && showResults",
+          "pieces": 60,
+          "animation": { "initial": { "y": -20, "rotate": 0, "opacity": 1 }, "animate": { "y": "110vh", "rotate": "rotation+720", "opacity": [1, 1, 0] }, "duration": 3.5 }
+        },
+        "TimerRing": {
+          "structure": "SVG circle strokeDasharray/dashoffset",
+          "motion": { "initial": { "opacity": 0, "scale": 0.8 }, "animate": { "opacity": 1, "scale": 1 } },
+          "stroke_transition": "duration 0.4 easeOut",
+          "urgent_state": "seconds<=10 시 stroke #EF4444, text accent-red"
+        },
+        "CountingDots": {
+          "structure": "3개 dot",
+          "animation": { "y": [0, -16, 0], "duration": 0.8, "delay": "i*0.15", "repeat": "Infinity" }
+        },
+        "SeatCell": {
+          "flip_mechanism": "transform rotateY(180deg), transition 0.7s cubic-bezier(.4,.2,.2,1)",
+          "flip_delay": "phase=RESULT 시 flipDelayMap 기반 랜덤 0~1500ms",
+          "css": "seat-flip-front, seat-flip-back, backface-visibility hidden"
+        }
+      },
+      "phases": {
+        "PreMeetingPhase": {
+          "elements": [
+            { "id": "particles" },
+            { "id": "logo", "motion": { "boxShadow": "4단계 그라데이션 루프", "duration": 6, "repeat": "Infinity" } },
+            { "id": "title", "motion": { "opacity": [0.85, 1, 0.85], "duration": 4, "repeat": "Infinity" } },
+            { "id": "seat_grid", "motion": { "initial": { "opacity": 0, "y": 20 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.4 } }
+          ]
+        },
+        "IdlePhase": {
+          "elements": [
+            { "id": "logo", "size": "w-28 h-28", "motion": { "boxShadow": "4단계 루프" } },
+            { "id": "question_sidebar", "motion": { "initial": { "opacity": 0, "x": 40 }, "animate": { "opacity": 1, "x": 0 } } },
+            { "id": "question_items", "motion": { "initial": { "opacity": 0, "y": 8 }, "animate": { "opacity": 1, "y": 0 }, "delay": "i*0.05" } }
+          ]
+        },
+        "IntroPhase": {
+          "stage_transition": "landing → content (1500ms 후)",
+          "landing": {
+            "motion": { "initial": { "opacity": 0, "y": 60 }, "animate": { "opacity": 1, "y": 0 } },
+            "progress_bar": { "initial": { "width": 0 }, "animate": { "width": 120 } }
+          },
+          "content": {
+            "motion": { "initial": { "opacity": 0 }, "animate": { "opacity": 1 } },
+            "pdf_viewer": "canvas 기반 렌더링"
+          }
+        },
+        "QaPhase": {
+          "speaker_present": {
+            "motion": { "initial": { "opacity": 0, "scale": 0.85 }, "animate": { "opacity": 1, "scale": 1 }, "transition": { "type": "spring", "stiffness": 200, "damping": 20 } },
+            "decorations": "animate-pulse-ring 2개 (0.5s delay)"
+          },
+          "speaker_absent": {
+            "motion": { "animate": { "opacity": [0, 1, 0] }, "duration": 1.5, "repeat": "Infinity" },
+            "text": "질문을 기다리는 중 ..."
+          }
+        },
+        "VotingPhase": {
+          "motion": { "initial": { "opacity": 0 }, "animate": { "opacity": 1 } },
+          "timer_or_counting": "timerSeconds>0 → TimerRing, ≤0 → CountingDots"
+        },
+        "ResultPhase": {
+          "show_results_delay": "2800ms",
+          "confetti_condition": "passed",
+          "result_card": {
+            "motion": { "initial": { "opacity": 0, "y": 80, "scale": 0.9 }, "animate": { "opacity": 1, "y": 0, "scale": 1 }, "transition": { "type": "spring", "stiffness": 180, "damping": 18 } },
+            "icon": { "motion": { "initial": { "scale": 0 }, "animate": { "scale": 1 }, "delay": 0.15 } }
+          },
+          "progress_bars": { "initial": { "width": 0 }, "animate": { "width": "proPct%|conPct%" }, "delay": 0.3 }
+        }
+      }
+    },
+
+    "remote": {
+      "route": "/remote",
+      "layout": {
+        "header": { "class": "glass-strong sticky top-0 z-50", "tabs": ["진행", "좌석"] },
+        "connection_indicator": { "animate_ping": "연결 시", "class": "bg-accent-green rounded-full" }
+      },
+      "sections": {
+        "agenda_selector": {
+          "motion": { "initial": { "opacity": 0, "y": 12 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.1 },
+          "toggle": { "motion": { "animate": { "rotate": "agendaOpen ? 180 : 0" }, "duration": 0.2 } },
+          "dropdown": { "motion": { "initial": { "opacity": 0, "height": 0 }, "animate": { "opacity": 1, "height": "auto" }, "duration": 0.2 } },
+          "agenda_item": { "class": "transition-colors active:bg-white/5", "selected": "bg-accent-blue/10" }
+        },
+        "phase_stepper": {
+          "motion": { "initial": { "opacity": 0, "y": 12 }, "animate": { "opacity": 1, "y": 0 }, "delay": 0.15 },
+          "progress_bar": "h-1.5 rounded-full transition-colors duration-300",
+          "phase_buttons": {
+            "layoutId": "phase-glow",
+            "motion": { "layout": true, "transition": { "type": "spring", "stiffness": 400, "damping": 30 } },
+            "interaction": { "whileTap": { "scale": 0.92 } },
+            "disabled": "opacity-40 cursor-not-allowed"
+          }
+        },
+        "question_queue": {
+          "motion": { "initial": { "opacity": 0, "y": 16 }, "animate": { "opacity": 1, "y": 0 } },
+          "speaking_indicator": "animate-ping accent-amber",
+          "question_items": { "motion": { "initial": { "opacity": 0, "x": -12 }, "animate": { "opacity": 1, "x": 0 }, "delay": "i*0.05" } },
+          "designate_button": "active:scale-95",
+          "finish_button": "active:scale-95"
+        },
+        "timer": {
+          "preset_buttons": "active:scale-95, selected: ring-accent-green/30",
+          "start_button": "active:scale-[0.97] glow-green",
+          "stop_button": "active:scale-[0.97] border-accent-red/20"
+        },
+        "vote_monitor": {
+          "progress_bars": "transition-all duration-300"
+        },
+        "next_agenda": {
+          "show_condition": "RESULT phase, 4초 후",
+          "button": "active:scale-[0.97] glow-blue"
+        }
+      }
+    },
+
+    "admin": {
+      "route": "/admin",
+      "layout": {
+        "header": { "class": "glass-strong sticky top-0" },
+        "tabs": { "layoutId": "activeTab", "motion": { "layout": true, "transition": { "type": "spring", "stiffness": 400, "damping": 30 } } }
+      },
+      "modals": {
+        "PdfPreviewModal": {
+          "backdrop": { "motion": { "initial": { "opacity": 0 }, "animate": { "opacity": 1 }, "exit": { "opacity": 0 } }, "onClick": "onClose" },
+          "content": { "motion": { "initial": { "scale": 0.95, "opacity": 0 }, "animate": { "scale": 1, "opacity": 1 }, "exit": { "scale": 0.95, "opacity": 0 } }, "onClick": "stopPropagation" },
+          "class": "glass-strong rounded-2xl w-[90vw] max-w-4xl h-[85vh]"
+        },
+        "Toast": {
+          "motion": { "initial": { "opacity": 0, "y": -20, "x": "-50%" }, "animate": { "opacity": 1, "y": 0, "x": "-50%" }, "exit": { "opacity": 0, "y": -20 } },
+          "position": "fixed top-6 left-1/2 z-50",
+          "auto_close": "4000ms",
+          "variants": { "success": "accent-green/20", "error": "accent-red/20" }
+        }
+      },
+      "tabs_ui": {
+        "students": {
+          "csv_dropzone": { "onDragOver": "setIsDragging", "onDragLeave": "setIsDragging(false)", "class": "border-dashed transition-colors", "drag_state": "border-accent-blue bg-accent-blue/5" },
+          "search_input": "focus:ring-1 focus:ring-accent-blue/40",
+          "table_row": "hover:bg-white/[0.02] transition-colors",
+          "role_dropdown": "transition-opacity hover:opacity-80",
+          "delete_button": "hover:bg-white/5 hover:text-accent-red"
+        },
+        "agendas": {
+          "pdf_dropzone": "동일 패턴",
+          "agenda_card": "group, ChevronUp/Down opacity-40 group-hover:opacity-100",
+          "input": "hover:border-border-glass focus:border-accent-blue/40",
+          "pdf_preview_link": "text-accent-blue hover:underline"
+        },
+        "requests": {
+          "seat_input": "focus:border-accent-blue/40, invalid: border-accent-red/40",
+          "approve_button": "hover:bg-accent-green/30",
+          "reject_button": "bg-accent-red/20 hover:bg-accent-red/30",
+          "table_row": "hover:bg-white/[0.02]"
+        },
+        "seatmap": {
+          "section_input": "focus:ring-accent-blue/40",
+          "add_section": "hover:bg-accent-blue/20",
+          "remove_section": "hover:bg-accent-red/10",
+          "save_button": "saving 시 Loader2"
+        },
+        "reports": {
+          "export_button": "hover:bg-accent-green/30",
+          "table_row": "hover:bg-white/[0.02]"
+        }
+      }
+    }
+  },
+
+  "shared_components": {
+    "SeatGrid": {
+      "cell_animation": { "initial": { "opacity": 0, "scale": 0.8 }, "animate": { "opacity": 1, "scale": 1 }, "transition": { "delay": "rowIdx*0.03 + col*0.008", "duration": 0.25 } },
+      "cell_state_classes": {
+        "voted_pro": "bg-accent-green/20 border-accent-green/30",
+        "voted_con": "bg-accent-red/20 border-accent-red/30",
+        "online": "bg-accent-blue/15, glow boxShadow",
+        "offline": "bg-white/[0.06]"
+      },
+      "interaction": "interactive && profile ? cursor-pointer hover:ring-1 hover:ring-accent-blue/40",
+      "detail_modal": {
+        "motion": { "initial": { "opacity": 0, "scale": 0.9 }, "animate": { "opacity": 1, "scale": 1 }, "exit": { "opacity": 0, "scale": 0.9 } },
+        "backdrop": "onClick close"
+      }
+    },
+    "SeatMap": {
+      "cell_base": "transition-all duration-300",
+      "interaction": "interactive ? cursor-pointer hover:ring-1 hover:ring-accent-blue/40"
+    }
+  },
+
+  "interaction_patterns": {
+    "button_press": { "scale": "0.95~0.98", "common": "active:scale-[0.97] or whileTap" },
+    "hover_feedback": "hover:bg-*, hover:text-*, hover:ring-*, transition-colors",
+    "loading_state": "Loader2 animate-spin",
+    "disabled_state": "opacity-40~50, cursor-not-allowed",
+    "drag_drop": "onDragOver preventDefault setIsDragging(true), onDragLeave setIsDragging(false)"
+  },
+
+  "easing_references": {
+    "smooth": "[0.16, 1, 0.3, 1]",
+    "ease_out": "easeOut",
+    "ease_in_out": "easeInOut",
+    "spring_standard": "stiffness 200~400, damping 15~30"
+  }
+}
