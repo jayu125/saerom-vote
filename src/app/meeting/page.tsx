@@ -317,6 +317,32 @@ function MeetingContent() {
     });
   }, [scale, pageBaseDims]);
 
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (phase !== "VOTING" || !meetingState?.timer_end_at) {
+      setTimerSeconds(null);
+      return;
+    }
+
+    const tick = () => {
+      const diff = Math.max(
+        0,
+        Math.ceil((new Date(meetingState.timer_end_at!).getTime() - Date.now()) / 1000),
+      );
+      setTimerSeconds(diff);
+      if (diff <= 0 && timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+
+    tick();
+    timerRef.current = setInterval(tick, 250);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [meetingState?.timer_end_at, phase]);
+
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (e.touches.length === 2) {
@@ -456,6 +482,7 @@ function MeetingContent() {
   const attendeePdfHidden =
     (phase === "IDLE" && !!meetingState?.current_agenda_id) ||
     phase === "RESULT";
+  const isVoteWindowOpen = phase === "VOTING" && (timerSeconds ?? 0) > 0;
   const stationMeta = profile?.assigned_seat
     ? `[ STATION: ${profile.assigned_seat.replace(/-/g, "_").toUpperCase()} ]`
     : "[ STATION: — ]";
@@ -507,7 +534,7 @@ function MeetingContent() {
             <div className="text-left leading-tight">
               <p className="text-[8px] font-mono opacity-50">{stationMeta}</p>
               <p className="text-[11px] font-bold">
-                대위원회 · {profile?.name}
+                대의원회 · {profile?.name}
               </p>
             </div>
           </div>
@@ -551,6 +578,20 @@ function MeetingContent() {
           >
             <Maximize className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {(phase === "IDLE" || phase === "RESULT") && (
+        <div className="fixed inset-0 z-20 pointer-events-none flex items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="px-6 py-4 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-md"
+          >
+            <p className="text-xl font-semibold tracking-wide text-slate-200">
+              대기 중...
+            </p>
+          </motion.div>
         </div>
       )}
 
@@ -625,17 +666,32 @@ function MeetingContent() {
                         Ballot Submitted
                       </p>
                     </div>
+                  ) : !isVoteWindowOpen ? (
+                    <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center backdrop-blur-lg">
+                      <p className="text-sm font-bold text-amber-300">
+                        투표 시작 대기 중...
+                      </p>
+                    </div>
                   ) : (
                     <div className="flex gap-4">
                       <button
                         onClick={() => submitVote("PRO")}
-                        className="flex-1 py-4 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500/30 transition-colors"
+                        disabled={voting}
+                        className="flex-1 py-4 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        찬성
+                        {voting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            전송 중...
+                          </>
+                        ) : (
+                          "찬성"
+                        )}
                       </button>
                       <button
                         onClick={() => setShowConReasonSheet(true)}
-                        className="flex-1 py-4 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 font-bold cursor-pointer hover:bg-red-500/30 transition-colors"
+                        disabled={voting}
+                        className="flex-1 py-4 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 font-bold cursor-pointer hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         반대
                       </button>
@@ -688,10 +744,17 @@ function MeetingContent() {
                 </button>
                 <button
                   onClick={() => submitVote("CON", conReason)}
-                  disabled={!conReason.trim()}
-                  className="flex-1 py-4 rounded-2xl bg-red-600 font-bold cursor-pointer transition-colors hover:bg-red-500 disabled:opacity-30"
+                  disabled={!conReason.trim() || voting}
+                  className="flex-1 py-4 rounded-2xl bg-red-600 font-bold cursor-pointer transition-colors hover:bg-red-500 disabled:opacity-30 flex items-center justify-center gap-2"
                 >
-                  투표 완료
+                  {voting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      전송 중...
+                    </>
+                  ) : (
+                    "투표 완료"
+                  )}
                 </button>
               </div>
             </motion.div>

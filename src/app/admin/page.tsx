@@ -768,7 +768,7 @@ export default function AdminPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold gradient-text leading-tight">
-                대위원회
+                대의원회
               </h1>
               <p className="text-[10px] text-text-muted leading-tight">
                 관리자 대시보드

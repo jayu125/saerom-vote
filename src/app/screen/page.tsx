@@ -406,7 +406,7 @@ function PreMeetingPhase({
           animate={{ opacity: [0.85, 1, 0.85] }}
           transition={{ duration: 4, repeat: Infinity }}
         >
-          대위원회
+          대의원회
         </motion.h1>
         <motion.p
           initial={{ opacity: 0 }}
@@ -904,15 +904,26 @@ function ResultPhase({
     [seatGrid],
   );
 
-  // [개선] 2~3초 연출을 위해 각 카드에 0~2.3초의 랜덤 딜레이 부여
+  // 좌상단 -> 우하단 순서로 웨이브 애니메이션 지연 시간 계산
   const flipDelayMap = useMemo(() => {
     const map = new Map<string, number>();
+    const totalCols = layout.sections.reduce((sum, size) => sum + size, 0);
+    const delayStepMs = 22;
+
     seatGrid.forEach((s) => {
-      // 0ms ~ 2300ms 사이의 랜덤 지연 시간
-      map.set(s.seat, Math.random() * 2300);
+      const [rowRaw, colRaw] = s.seat.split("-");
+      const row = Number(rowRaw) || 0;
+      const col = Number(colRaw) || 0;
+      const index = Math.max(0, (row - 1) * totalCols + (col - 1));
+      map.set(s.seat, index * delayStepMs);
     });
+
     return map;
-  }, [seatGrid]);
+  }, [layout.sections, seatGrid]);
+  const revealDurationMs = useMemo(() => {
+    const delays = Array.from(flipDelayMap.values());
+    return (delays.length > 0 ? Math.max(...delays) : 0) + 900;
+  }, [flipDelayMap]);
 
   const proCount = seatGrid.filter((s) => s.choice === "PRO").length;
   const conCount = seatGrid.filter((s) => s.choice === "CON").length;
@@ -922,10 +933,10 @@ function ResultPhase({
   const conPct = total > 0 ? (conCount / total) * 100 : 0;
 
   useEffect(() => {
-    // 모든 카드가 뒤집힐 시간을 고려하여 하단 결과창 표시 시점 조정 (3초)
-    const timer = setTimeout(() => setShowResults(true), 3000);
+    // 모든 카드가 뒤집힌 이후 결과 패널 노출
+    const timer = setTimeout(() => setShowResults(true), revealDurationMs);
     return () => clearTimeout(timer);
-  }, []);
+  }, [revealDurationMs]);
 
   return (
     <motion.div
