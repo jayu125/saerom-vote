@@ -1025,7 +1025,9 @@ function MeetingContent() {
         onTouchMove={onTouchMove}
         onTouchEnd={commitPinchScale}
         onTouchCancel={commitPinchScale}
-        style={{ touchAction: attendeePdfHidden ? "auto" : "none" }}
+        style={{
+          touchAction: attendeePdfHidden ? "auto" : "pan-x pan-y",
+        }}
       >
         {numPages > 0 && (
           <div
