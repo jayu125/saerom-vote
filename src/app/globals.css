@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "SchoolSafeAutumnTrip";
+  src: url("/fonts/HakgyoansimGaeulsopungL.woff2") format("woff2");
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SchoolSafeAutumnTrip";
+  src: url("/fonts/HakgyoansimGaeulsopungB.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
 @theme inline {
   --color-bg-primary: #0A0C10;
   --color-bg-secondary: #12141A;
@@ -58,14 +72,15 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #3B82F6, #06B6D4, #8B5CF6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #2563EB;
+}
+
+.font-autumn-trip {
+  font-family: "SchoolSafeAutumnTrip", var(--font-sans);
 }
 
 .seat-flip {
-  perspective: 800px;
+  perspective: 1000px;
 }
 
 .seat-flip-inner {
@@ -84,6 +99,45 @@ body {
 
 .seat-flip-back {
   transform: rotateY(180deg);
+}
+
+.seat-flip-face {
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.seat-flip-face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.08) 18%,
+    transparent 45%,
+    rgba(15, 23, 42, 0.08) 100%
+  );
+  pointer-events: none;
+}
+
+.seat-flip-face::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  right: -4px;
+  width: 8px;
+  border-radius: 0 6px 6px 0;
+  background: linear-gradient(
+    to right,
+    rgba(15, 23, 42, 0.14),
+    rgba(15, 23, 42, 0.28)
+  );
+  transform: rotateY(90deg) translateZ(-2px);
+  transform-origin: left center;
+  pointer-events: none;
+  opacity: 0.75;
 }
 
 @keyframes pulse-ring {

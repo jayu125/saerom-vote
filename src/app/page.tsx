@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import {
-  Vote,
   LogOut,
   Radio,
   Users,
@@ -107,7 +106,7 @@ function HomeContent() {
   if (authState === "loading")
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#05070A]">
-        <Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
       </div>
     );
 
@@ -121,11 +120,8 @@ function HomeContent() {
         className="relative z-10 w-full max-w-md px-6 flex flex-col items-center gap-8"
       >
         <div className="text-center space-y-4">
-          <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto shadow-[0_0_40px_rgba(6,182,212,0.3)]">
-            <Vote className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-4xl font-black tracking-tighter uppercase">
-            Saerom Voting
+          <h1 className="text-4xl font-black tracking-tighter">
+            대의원회
           </h1>
         </div>
 
@@ -140,8 +136,8 @@ function HomeContent() {
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-xl">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-xl font-bold">{profile.name}</span>
-                  <span className="px-3 py-1 rounded-full text-[10px] font-bold border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 uppercase">
-                    {profile.role}
+                  <span className="px-3 py-1 rounded-full text-[10px] font-bold border border-blue-500/30 bg-blue-500/10 text-blue-500">
+                    {profile.role === "attendee" ? "참석자" : profile.role}
                   </span>
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-400">
@@ -167,9 +163,9 @@ function HomeContent() {
                         : "/meeting";
                   router.push(url);
                 }}
-                className="w-full py-4 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-lg flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
+                className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-lg flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
               >
-                시스템 입장 <ChevronRight className="w-5 h-5" />
+                회의 참여 <ChevronRight className="w-5 h-5" />
               </button>
               <button
                 onClick={async () => {

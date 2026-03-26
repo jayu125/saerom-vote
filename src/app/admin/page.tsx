@@ -304,6 +304,8 @@ export default function AdminPage() {
 
   const [activeTab, setActiveTab] = useState<Tab>("students");
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -372,6 +374,37 @@ export default function AdminPage() {
     }
   }
 
+  async function resolveCurrentUser() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setCurrentUser(null);
+      return null;
+    }
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    let resolvedProfile = data as Profile | null;
+
+    if (!resolvedProfile) {
+      const { data: byEmail } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("email", user.email!)
+        .maybeSingle();
+      resolvedProfile = (byEmail as Profile | null) ?? null;
+    }
+
+    setCurrentUser(resolvedProfile);
+    return resolvedProfile;
+  }
+
   async function fetchProfiles() {
     const { data } = await supabase
       .from("profiles")
@@ -410,11 +443,26 @@ export default function AdminPage() {
   fetchMeetingStateRef.current = fetchMeetingState;
 
   useEffect(() => {
-    fetchCurrentUser();
-    fetchProfiles();
-    fetchAgendas();
-    fetchRequests();
-    fetchMeetingState();
+    async function init() {
+      const user = await resolveCurrentUser();
+
+      if (!user || user.role !== "admin") {
+        setAccessDenied(true);
+        setAuthResolved(true);
+        return;
+      }
+
+      setAccessDenied(false);
+      await Promise.all([
+        fetchProfiles(),
+        fetchAgendas(),
+        fetchRequests(),
+        fetchMeetingState(),
+      ]);
+      setAuthResolved(true);
+    }
+
+    void init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time 구독 — ref를 통해 항상 최신 fetch 함수 호출
@@ -738,6 +786,44 @@ export default function AdminPage() {
     },
     exit: { opacity: 0, y: -12, transition: { duration: 0.2 } },
   };
+
+  if (!authResolved) {
+    return (
+      <div className="min-h-screen bg-bg-primary flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <Loader2 className="w-8 h-8 text-accent-blue animate-spin" />
+          <p className="text-sm text-text-secondary">권한을 확인하는 중입니다...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-bg-primary flex items-center justify-center px-6">
+        <div className="glass-strong rounded-3xl p-8 max-w-md w-full text-center space-y-5">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-accent-red/15 flex items-center justify-center">
+            <Shield className="w-7 h-7 text-accent-red" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold text-text-primary">관리자 전용 페이지</h1>
+            <p className="text-sm text-text-secondary">
+              이 페이지는 관리자 계정만 접근할 수 있습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = "/";
+            }}
+            className="w-full py-3 rounded-2xl bg-accent-blue text-white font-semibold cursor-pointer"
+          >
+            홈으로 이동
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-bg-primary">
@@ -1219,18 +1305,32 @@ function AgendaTab({
   onPdfPreview: (url: string) => void;
 }) {
   const [isDraggingPdf, setIsDraggingPdf] = useState(false);
+  const [draggingAgendaId, setDraggingAgendaId] = useState<string | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({
     current: 0,
     total: 0,
   });
   const [pdfUploading, setPdfUploading] = useState<string | null>(null);
+  const [orderedAgendas, setOrderedAgendas] = useState<Agenda[] | null>(null);
   const [editValues, setEditValues] = useState<
     Record<string, { title: string; description: string }>
   >({});
 
   const bulkInputRef = useRef<HTMLInputElement>(null);
   const pdfRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const orderedAgendasRef = useRef<Agenda[]>(agendas);
+  const displayedAgendas = useMemo(() => {
+    if (!orderedAgendas) return agendas;
+
+    const agendaMap = new Map(agendas.map((agenda) => [agenda.id, agenda]));
+    const hasSameAgendaSet =
+      orderedAgendas.length === agendas.length &&
+      orderedAgendas.every((agenda) => agendaMap.has(agenda.id));
+
+    if (!hasSameAgendaSet) return agendas;
+    return orderedAgendas.map((agenda) => agendaMap.get(agenda.id) ?? agenda);
+  }, [orderedAgendas, agendas]);
 
   useEffect(() => {
     const vals: Record<string, { title: string; description: string }> = {};
@@ -1387,26 +1487,49 @@ function AgendaTab({
     }
   }
 
-  async function moveAgenda(id: string, direction: "up" | "down") {
-    const idx = agendas.findIndex((a) => a.id === id);
-    if (idx < 0) return;
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= agendas.length) return;
-
-    const current = agendas[idx];
-    const swap = agendas[swapIdx];
-
-    await fetch("/api/admin/agendas", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: current.id, order_index: swap.order_index }),
-    });
-    await fetch("/api/admin/agendas", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: swap.id, order_index: current.order_index }),
-    });
+  async function persistAgendaOrder(nextAgendas: Agenda[]) {
+    await Promise.all(
+      nextAgendas.map((agenda, index) =>
+        fetch("/api/admin/agendas", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: agenda.id, order_index: index }),
+        }),
+      ),
+    );
     fetchAgendas();
+  }
+
+  function handleAgendaDragStart(agendaId: string) {
+    if (!orderedAgendas) {
+      setOrderedAgendas(agendas);
+      orderedAgendasRef.current = agendas;
+    }
+    setDraggingAgendaId(agendaId);
+  }
+
+  function handleAgendaDragEnter(targetAgendaId: string) {
+    if (!draggingAgendaId || draggingAgendaId === targetAgendaId) return;
+
+    setOrderedAgendas((prev) => {
+      const base = prev ?? agendas;
+      const fromIndex = base.findIndex((agenda) => agenda.id === draggingAgendaId);
+      const toIndex = base.findIndex((agenda) => agenda.id === targetAgendaId);
+      if (fromIndex < 0 || toIndex < 0) return prev;
+
+      const next = [...base];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      orderedAgendasRef.current = next;
+      return next;
+    });
+  }
+
+  async function handleAgendaDragEnd() {
+    if (!draggingAgendaId) return;
+    const nextAgendas = [...orderedAgendasRef.current];
+    setDraggingAgendaId(null);
+    await persistAgendaOrder(nextAgendas);
   }
 
   function handlePdfDrop(e: React.DragEvent) {
@@ -1425,6 +1548,7 @@ function AgendaTab({
             총 {agendas.length}개 안건
           </p>
         </div>
+        <p className="text-xs text-text-muted">카드를 드래그해서 순서를 바꿀 수 있습니다.</p>
       </div>
 
       <div
@@ -1506,14 +1630,21 @@ function AgendaTab({
             </p>
           </div>
         ) : (
-          agendas.map((agenda, idx) => (
+          displayedAgendas.map((agenda, idx) => (
             <motion.div
               key={agenda.id}
               layout
+              draggable
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className="glass rounded-2xl p-5 flex items-start gap-4 group"
+              onDragStart={() => handleAgendaDragStart(agenda.id)}
+              onDragEnter={() => handleAgendaDragEnter(agenda.id)}
+              onDragOver={(e) => e.preventDefault()}
+              onDragEnd={handleAgendaDragEnd}
+              className={`glass rounded-2xl p-5 flex items-start gap-4 group cursor-grab active:cursor-grabbing ${
+                draggingAgendaId === agenda.id ? "opacity-60 ring-2 ring-accent-blue/30" : ""
+              }`}
             >
               <div className="w-16 h-20 rounded-xl bg-accent-blue/10 border border-accent-blue/20 flex flex-col items-center justify-center shrink-0">
                 <FileText className="w-6 h-6 text-accent-blue/60" />
@@ -1522,22 +1653,11 @@ function AgendaTab({
                 </span>
               </div>
 
-              <div className="flex flex-col items-center gap-1 pt-1 opacity-40 group-hover:opacity-100 transition-opacity shrink-0">
+              <div className="flex flex-col items-center gap-1 pt-1 opacity-50 group-hover:opacity-100 transition-opacity shrink-0">
                 <GripVertical className="w-4 h-4 text-text-muted" />
-                <button
-                  onClick={() => moveAgenda(agenda.id, "up")}
-                  disabled={idx === 0}
-                  className="p-0.5 hover:text-accent-blue disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => moveAgenda(agenda.id, "down")}
-                  disabled={idx === agendas.length - 1}
-                  className="p-0.5 hover:text-accent-blue disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </button>
+                <span className="text-[10px] text-text-muted uppercase tracking-[0.2em]">
+                  Drag
+                </span>
               </div>
 
               <div className="flex-1 min-w-0 space-y-2">
