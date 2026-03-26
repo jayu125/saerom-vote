@@ -11,6 +11,7 @@ import {
   FileText,
   Loader2,
   Sparkles,
+  User,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { usePresence } from "@/components/SeatMap";
@@ -26,6 +27,7 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_SEAT_LAYOUT } from "@/lib/types";
 import { initPdfWorker } from "@/lib/pdf-utils";
+import { useSearchParams } from "next/navigation";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -285,9 +287,80 @@ interface SeatCellProps {
   info: SeatVoteInfo;
   phase: Phase;
   flipDelay: number;
+  resultFadeOut?: boolean;
 }
 
-function SeatCell({ info, phase, flipDelay }: SeatCellProps) {
+function buildDemoSeatGrid(layout: SeatLayout): SeatVoteInfo[] {
+  const seats: string[] = [];
+  const totalCols = layout.sections.reduce((sum, count) => sum + count, 0);
+
+  for (let row = 1; row <= layout.rows; row += 1) {
+    for (let col = 1; col <= totalCols; col += 1) {
+      seats.push(`${row}-${col}`);
+    }
+  }
+
+  return seats.slice(0, 50).map((seat, index) => {
+    const isPro = index % 5 !== 0;
+    return {
+      seat,
+      name: `테스트 ${index + 1}`,
+      voted: true,
+      choice: isPro ? "PRO" : "CON",
+      online: true,
+      userId: `demo-${index + 1}`,
+    };
+  });
+}
+
+const IDLE_MESSAGES = [
+  "앞에 나와서 발표하는 건 생각보다 떨린답니다? 그러니 박수로 응원 부탁드려요..!",
+  "정말 열심히 준비했으니 피곤하시겠지만 집중해주세요 ㅠㅠ",
+  "반대하기 전에 질문 제발 많이 해주세요... 얼마든지 질문하셔도 돼요...!",
+  "오늘은 언제쯤 집에 갈 수 있을까요",
+  "저도 빨리 집에 가고 싶답니다",
+  "학생회는 한 행사에 꽤나 많은 정성을 들여 준비해요",
+] as const;
+
+let lastIdleMessageIndex = -1;
+
+function pickIdleMessageIndex(exclude: number) {
+  if (IDLE_MESSAGES.length <= 1) return 0;
+  let next = exclude;
+  while (next === exclude) {
+    next = Math.floor(Math.random() * IDLE_MESSAGES.length);
+  }
+  return next;
+}
+
+function StandbyDots() {
+  return (
+    <div className="flex items-center justify-center gap-2">
+      {[0, 1, 2].map((dot) => (
+        <motion.span
+          key={dot}
+          className="h-2.5 w-2.5 rounded-full bg-blue-500"
+          animate={{ y: [0, -8, 0] }}
+          transition={{
+            duration: 0.85,
+            delay: dot * 0.12,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+const RESULT_FLIP_DURATION_MS = 700;
+
+function SeatCell({
+  info,
+  phase,
+  flipDelay,
+  resultFadeOut = false,
+}: SeatCellProps) {
   const [flipped, setFlipped] = useState(false);
 
   useEffect(() => {
@@ -300,7 +373,7 @@ function SeatCell({ info, phase, flipDelay }: SeatCellProps) {
   }, [phase, info.voted, flipDelay]);
 
   const baseClasses =
-    "w-[54px] h-[54px] rounded-lg text-[0.6875rem] font-semibold flex items-center justify-center select-none";
+    "w-[60px] h-[60px] rounded-lg text-[0.6875rem] font-semibold flex items-center justify-center select-none";
 
   const frontBg =
     phase === "RESULT" || phase === "VOTING"
@@ -323,36 +396,58 @@ function SeatCell({ info, phase, flipDelay }: SeatCellProps) {
 
   const backColor =
     info.choice === "PRO"
-      ? "bg-emerald-600 text-white border border-emerald-700 shadow-md shadow-emerald-600/25"
+      ? "bg-blue-600 text-white border border-blue-700 shadow-md shadow-blue-600/25"
       : "bg-red-600 text-white border border-red-700 shadow-md shadow-red-600/25";
 
   return (
     <motion.div
       className="seat-flip"
       initial={false}
-      animate={phase === "VOTING" && info.voted ? { scale: [1, 1.25, 1] } : {}}
-      transition={{ duration: 0.35, ease: "easeOut" }}
+      animate={
+        phase === "VOTING" && info.voted
+          ? { scale: [1, 1.25, 1] }
+          : phase === "RESULT" && info.voted
+            ? {
+                scale: resultFadeOut ? 1 : [1, 1.06, 1],
+                opacity: resultFadeOut ? 0 : 1,
+              }
+            : { opacity: resultFadeOut ? 0 : 1 }
+      }
+      transition={{
+        duration: phase === "RESULT" ? 0.38 : 0.35,
+        ease: "easeOut",
+        delay: phase === "RESULT" && !resultFadeOut ? flipDelay / 1000 : 0,
+      }}
     >
       <div
-        className={`seat-flip-inner relative w-[54px] h-[54px] ${flipped ? "flipped" : ""}`}
+        className={`seat-flip-inner relative w-[60px] h-[60px] ${flipped ? "flipped" : ""}`}
         style={{
           transformStyle: "preserve-3d",
-          transition: "transform 0.7s cubic-bezier(.4,.2,.2,1)",
+          transition: `transform ${RESULT_FLIP_DURATION_MS}ms cubic-bezier(.4,.2,.2,1)`,
         }}
       >
         {/* Front */}
         <div
-          className={`seat-flip-front absolute inset-0 ${baseClasses} ${frontBg} transition-colors duration-300`}
-          style={{ backfaceVisibility: "hidden", ...onlineGlow }}
+          className={`seat-flip-front seat-flip-face absolute inset-0 ${baseClasses} ${frontBg} transition-colors duration-300`}
+          style={{
+            backfaceVisibility: "hidden",
+            transform: "translateZ(3px)",
+            ...onlineGlow,
+          }}
         >
           {info.seat}
         </div>
         {/* Back */}
         <div
-          className={`seat-flip-back absolute inset-0 ${baseClasses} ${backColor}`}
-          style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+          className={`seat-flip-back seat-flip-face absolute inset-0 ${baseClasses} ${backColor}`}
+          style={{
+            backfaceVisibility: "hidden",
+            transform: "rotateY(180deg) translateZ(3px)",
+          }}
         >
-          {info.choice === "PRO" ? "찬성" : "반대"}
+          <span className="text-[0.55rem] font-bold">
+            {info.choice === "PRO" ? "찬성" : "반대"}
+          </span>
         </div>
       </div>
     </motion.div>
@@ -387,26 +482,12 @@ function PreMeetingPhase({
       <Particles />
 
       <div className="text-center z-10">
-        <motion.div
-          animate={{
-            boxShadow: [
-              "0 0 32px rgba(59,130,246,0.18), 0 0 80px rgba(59,130,246,0.07)",
-              "0 0 40px rgba(139,92,246,0.2), 0 0 100px rgba(139,92,246,0.09)",
-              "0 0 32px rgba(6,182,212,0.2), 0 0 80px rgba(6,182,212,0.08)",
-              "0 0 32px rgba(59,130,246,0.18), 0 0 80px rgba(59,130,246,0.07)",
-            ],
-          }}
-          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-          className="w-20 h-20 rounded-2xl bg-gradient-to-br from-accent-blue via-accent-purple to-accent-cyan flex items-center justify-center mx-auto mb-4"
-        >
-          <Vote className="w-10 h-10 text-white" />
-        </motion.div>
         <motion.h1
-          className="text-5xl font-extrabold tracking-tight gradient-text"
+          className="text-5xl font-extrabold tracking-tight text-blue-700"
           animate={{ opacity: [0.85, 1, 0.85] }}
           transition={{ duration: 4, repeat: Infinity }}
         >
-          대위원회
+          대의원회
         </motion.h1>
         <motion.p
           initial={{ opacity: 0 }}
@@ -418,6 +499,14 @@ function PreMeetingPhase({
           <span className="text-blue-700 font-semibold">{onlineCount}</span>/
           {totalSeats}석
         </motion.p>
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45 }}
+          className="mt-4"
+        >
+          <StandbyDots />
+        </motion.div>
       </div>
 
       <motion.div
@@ -450,6 +539,23 @@ function IdlePhase({
   const waitingQs = questions.filter(
     (q) => (q as { status?: string }).status === "waiting",
   );
+  const [messageIndex, setMessageIndex] = useState(() => {
+    const next = pickIdleMessageIndex(lastIdleMessageIndex);
+    lastIdleMessageIndex = next;
+    return next;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMessageIndex((current) => {
+        const next = pickIdleMessageIndex(current);
+        lastIdleMessageIndex = next;
+        return next;
+      });
+    }, 10000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <motion.div
@@ -462,37 +568,37 @@ function IdlePhase({
       <div className="flex-1 flex flex-col items-center justify-center gap-6 relative">
         <Particles />
 
-        <motion.div
-          animate={{
-            boxShadow: [
-              "0 0 32px rgba(59,130,246,0.18), 0 0 80px rgba(59,130,246,0.07)",
-              "0 0 40px rgba(139,92,246,0.2), 0 0 100px rgba(139,92,246,0.09)",
-              "0 0 32px rgba(6,182,212,0.2), 0 0 80px rgba(6,182,212,0.08)",
-              "0 0 32px rgba(59,130,246,0.18), 0 0 80px rgba(59,130,246,0.07)",
-            ],
-          }}
-          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-          className="w-28 h-28 rounded-3xl bg-gradient-to-br from-accent-blue via-accent-purple to-accent-cyan flex items-center justify-center"
-        >
-          <Vote className="w-14 h-14 text-white" />
-        </motion.div>
-
         <div className="text-center z-10">
           <motion.h1
-            className="text-7xl font-extrabold tracking-tight gradient-text"
+            className="text-7xl font-bold tracking-tight text-blue-700 font-autumn-trip"
+            style={{
+              fontWeight: 700,
+            }}
             animate={{ opacity: [0.85, 1, 0.85] }}
             transition={{ duration: 4, repeat: Infinity }}
           >
             안건 발의 준비 중
           </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={messageIndex}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.45 }}
+              className="mt-4 text-xl text-slate-600 max-w-3xl leading-relaxed"
+            >
+              {IDLE_MESSAGES[messageIndex]}
+            </motion.p>
+          </AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mt-4 text-xl text-slate-600"
+            transition={{ delay: 0.52 }}
+            className="mt-5"
           >
-            조금만 기다려주세요.
-          </motion.p>
+            <StandbyDots />
+          </motion.div>
         </div>
       </div>
 
@@ -538,7 +644,12 @@ function IdlePhase({
 }
 
 function IntroPhase({ agenda }: { agenda: Agenda | null }) {
-  const [stage, setStage] = useState<"landing" | "content">("landing");
+  const title = agenda?.title ?? "불러오는 중...";
+  const [typedLength, setTypedLength] = useState(0);
+  const [titleStage, setTitleStage] = useState<"typing" | "docking" | "docked">(
+    "typing",
+  );
+  const [pdfVisible, setPdfVisible] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<any>(null);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
@@ -628,9 +739,37 @@ function IntroPhase({ agenda }: { agenda: Agenda | null }) {
   }, [pdfReady, viewerMounted, numPages]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setStage("content"), 1500);
-    return () => clearTimeout(timer);
-  }, []);
+    setTypedLength(0);
+    setTitleStage("typing");
+    setPdfVisible(false);
+
+    const totalDuration = Math.min(Math.max(title.length * 70, 1000), 2000);
+    const stepDuration = totalDuration / Math.max(title.length, 1);
+
+    let index = 0;
+    let dockTimer: ReturnType<typeof setTimeout> | null = null;
+    let revealTimer: ReturnType<typeof setTimeout> | null = null;
+    const typingTimer = setInterval(() => {
+      index += 1;
+      setTypedLength(Math.min(index, title.length));
+      if (index >= title.length) {
+        clearInterval(typingTimer);
+        dockTimer = setTimeout(() => {
+          setTitleStage("docking");
+          revealTimer = setTimeout(() => {
+            setTitleStage("docked");
+            setPdfVisible(true);
+          }, 800);
+        }, 500);
+      }
+    }, stepDuration);
+
+    return () => {
+      clearInterval(typingTimer);
+      if (dockTimer) clearTimeout(dockTimer);
+      if (revealTimer) clearTimeout(revealTimer);
+    };
+  }, [title]);
 
   useEffect(() => {
     return () => {
@@ -649,67 +788,64 @@ function IntroPhase({ agenda }: { agenda: Agenda | null }) {
       exit={{ opacity: 0 }}
       className="h-full w-full relative"
     >
-      <AnimatePresence mode="wait">
-        {stage === "landing" && (
-          <motion.div
-            key="landing"
-            initial={{ opacity: 0, y: 60 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: -60 }}
-            className="flex flex-col items-center justify-center h-full gap-8"
-          >
-            <h1 className="text-6xl font-extrabold gradient-text text-center max-w-4xl leading-tight">
-              {agenda?.title ?? "불러오는 중..."}
-            </h1>
-            {agenda?.description && (
-              <p className="text-xl text-slate-600 text-center max-w-2xl leading-relaxed">
-                {agenda.description}
-              </p>
-            )}
-          </motion.div>
-        )}
-        {stage === "content" && (
-          <motion.div
-            key="content"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col h-full"
-          >
-            <div className="glass-strong px-8 py-4 flex items-center justify-between shrink-0 border-b border-slate-200">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-blue to-accent-cyan flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-white" />
-                </div>
-                <h2 className="text-2xl font-bold gradient-text leading-tight">
-                  {agenda?.title}
-                </h2>
-              </div>
-            </div>
-            <div
-              ref={viewerRefCallback}
-              className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-100/80"
+      <motion.div
+        initial={false}
+        animate={
+          titleStage === "typing"
+            ? { top: "50%", left: "50%", x: "-50%", y: "-50%", scale: 1 }
+            : titleStage === "docking" || titleStage === "docked"
+            ? { top: 24, left: "50%", x: "-50%", y: 0, scale: 0.46 }
+            : { top: "50%", left: "50%", x: "-50%", y: "-50%", scale: 1 }
+        }
+        transition={{ duration: 0.8, ease: [0.22, 0.76, 0.26, 1] }}
+        className="absolute z-20 origin-top text-center pointer-events-none"
+      >
+        <h1 className="text-6xl font-extrabold text-blue-700 leading-tight whitespace-nowrap">
+          {title.slice(0, typedLength)}
+          {titleStage === "typing" && typedLength < title.length && (
+            <motion.span
+              className="inline-block ml-1"
+              animate={{ opacity: [0, 1, 0] }}
+              transition={{ duration: 0.9, repeat: Infinity }}
             >
-              {pdfReady && numPages > 0 ? (
-                <div className="flex flex-col items-center gap-4 py-6">
-                  {Array.from({ length: numPages }).map((_, i) => (
-                    <canvas
-                      key={i}
-                      ref={(el) => {
-                        canvasRefs.current[i] = el;
-                      }}
-                      className="rounded-lg shadow-lg shadow-slate-400/40 ring-1 ring-slate-300/90 bg-white"
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                </div>
-              )}
+              |
+            </motion.span>
+          )}
+        </h1>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: pdfVisible ? 1 : 0 }}
+        transition={{ duration: 0.35 }}
+        className="flex flex-col h-full"
+      >
+        <div className="glass-strong px-8 py-4 flex items-center justify-center shrink-0 border-b border-slate-200 min-h-[88px]">
+          <div className="h-[46px]" />
+        </div>
+        <div
+          ref={viewerRefCallback}
+          className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-100/80"
+        >
+          {pdfReady && numPages > 0 ? (
+            <div className="flex flex-col items-center gap-4 py-6">
+              {Array.from({ length: numPages }).map((_, i) => (
+                <canvas
+                  key={i}
+                  ref={(el) => {
+                    canvasRefs.current[i] = el;
+                  }}
+                  className="rounded-lg shadow-lg shadow-slate-400/40 ring-1 ring-slate-300/90 bg-white"
+                />
+              ))}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            </div>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -717,20 +853,28 @@ function IntroPhase({ agenda }: { agenda: Agenda | null }) {
 function QaPhase({
   agenda,
   speaker,
+  questions,
 }: {
   agenda: Agenda | null;
   speaker: Profile | null;
+  questions: {
+    id: string;
+    status?: string;
+    profile?: { name: string; assigned_seat: string; student_id?: string | null } | null;
+  }[];
 }) {
+  const waitingQuestions = questions.filter((q) => q.status === "waiting");
+
   return (
     <motion.div
       key="qa"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="flex flex-col items-center justify-center h-full gap-10"
+      className="flex flex-col h-full px-8 py-8"
     >
-      <div className="text-center space-y-3">
-        <div className="flex items-center justify-center gap-3 text-sky-800">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex items-center justify-center gap-3 text-blue-700">
           <MessageCircle className="w-7 h-7" />
           <span className="text-2xl font-bold tracking-wide">질의응답</span>
         </div>
@@ -739,55 +883,81 @@ function QaPhase({
         </h2>
       </div>
 
-      <AnimatePresence mode="wait">
-        {speaker ? (
-          <motion.div
-            key={speaker.id}
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
-            className="relative flex flex-col items-center"
-          >
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="absolute w-56 h-56 rounded-full border-2 border-sky-400/60 animate-pulse-ring" />
-              <span
-                className="absolute w-56 h-56 rounded-full border-2 border-cyan-400/45 animate-pulse-ring"
-                style={{ animationDelay: "0.5s" }}
-              />
-            </div>
-
-            <div className="glass-strong rounded-3xl px-16 py-12 flex flex-col items-center gap-4 relative z-10">
-              <Mic className="w-10 h-10 text-blue-700" />
-              <span className="text-sm font-semibold text-blue-800 tracking-widest uppercase">
-                현재 발언자
-              </span>
-              <span className="text-5xl font-extrabold text-slate-900">
-                {speaker.name}
-              </span>
-              <span className="text-xl text-slate-600">
-                좌석 {speaker.assigned_seat}
-              </span>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="waiting"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center gap-2 text-slate-500 text-2xl"
-          >
-            <span>질문을 기다리는 중</span>
-            <motion.span
-              animate={{ opacity: [0, 1, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
+      <div className="flex-1 flex items-center justify-center relative">
+        <AnimatePresence mode="wait">
+          {speaker ? (
+            <motion.div
+              key={speaker.id}
+              initial={{ opacity: 0, scale: 0.85, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 200, damping: 20 }}
+              className="relative flex flex-col items-center"
             >
-              ...
-            </motion.span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="absolute w-72 h-72 rounded-full border-2 border-blue-400/60 animate-pulse-ring" />
+                <span
+                  className="absolute w-72 h-72 rounded-full border-2 border-blue-300/35 animate-pulse-ring"
+                  style={{ animationDelay: "0.5s" }}
+                />
+              </div>
+
+              <div className="glass-strong rounded-[32px] px-16 py-12 flex items-center gap-6 relative z-10">
+                <div className="w-20 h-20 rounded-full bg-blue-600/10 flex items-center justify-center border border-blue-300/40">
+                  <User className="w-10 h-10 text-blue-700" />
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-blue-800 tracking-widest uppercase">
+                    현재 발언자
+                  </div>
+                  <div className="text-5xl font-extrabold text-slate-900 mt-2">
+                    {speaker.name}
+                  </div>
+                  <div className="text-xl text-slate-600 mt-1">
+                    좌석 {speaker.assigned_seat}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="queue"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-3xl flex flex-col items-center gap-8"
+            >
+              <div className="flex flex-col items-center gap-4">
+                <StandbyDots />
+                <span className="text-xl text-slate-600">질문을 기다리는 중</span>
+              </div>
+              <div className="w-full flex flex-col gap-3">
+                <AnimatePresence>
+                  {waitingQuestions.map((q, index) => (
+                    <motion.div
+                      key={q.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -16 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="mx-auto w-full max-w-2xl rounded-full border border-slate-200 bg-white/90 px-6 py-4 shadow-sm"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-11 h-11 rounded-full bg-blue-600/10 flex items-center justify-center border border-blue-300/40">
+                          <User className="w-5 h-5 text-blue-700" />
+                        </div>
+                        <div className="rounded-full bg-slate-100 px-5 py-2 text-slate-900 font-semibold">
+                          {[q.profile?.student_id, q.profile?.name].filter(Boolean).join(" ")}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </motion.div>
   );
 }
@@ -869,7 +1039,7 @@ function VotingPhase({
                       const id = `${row}-${col}`;
                       const info = seatMap.get(id);
                       if (!info) {
-                        return <div key={id} className="w-[54px] h-[54px]" />;
+                        return <div key={id} className="w-[60px] h-[60px]" />;
                       }
                       return (
                         <SeatCell
@@ -898,21 +1068,32 @@ function ResultPhase({
   seatGrid: SeatVoteInfo[];
   layout: SeatLayout;
 }) {
+  const [collapseSeats, setCollapseSeats] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const seatMap = useMemo(
     () => new Map(seatGrid.map((s) => [s.seat, s])),
     [seatGrid],
   );
 
-  // [개선] 2~3초 연출을 위해 각 카드에 0~2.3초의 랜덤 딜레이 부여
+  // 좌상단 -> 우하단 대각선 웨이브 지연 시간 계산
   const flipDelayMap = useMemo(() => {
     const map = new Map<string, number>();
+    const diagonalDelayMs = 42;
+
     seatGrid.forEach((s) => {
-      // 0ms ~ 2300ms 사이의 랜덤 지연 시간
-      map.set(s.seat, Math.random() * 2300);
+      const { row, col } = parseSeat(s.seat);
+      const diagonalIndex = Math.max(0, row + col - 2);
+      map.set(s.seat, diagonalIndex * diagonalDelayMs);
     });
+
     return map;
   }, [seatGrid]);
+  const revealDurationMs = useMemo(() => {
+    const delays = Array.from(flipDelayMap.values());
+    return (delays.length > 0 ? Math.max(...delays) : 0) + RESULT_FLIP_DURATION_MS + 120;
+  }, [flipDelayMap]);
+  const collapseStartMs = revealDurationMs + 2000;
+  const collapseDurationMs = 320;
 
   const proCount = seatGrid.filter((s) => s.choice === "PRO").length;
   const conCount = seatGrid.filter((s) => s.choice === "CON").length;
@@ -922,10 +1103,20 @@ function ResultPhase({
   const conPct = total > 0 ? (conCount / total) * 100 : 0;
 
   useEffect(() => {
-    // 모든 카드가 뒤집힐 시간을 고려하여 하단 결과창 표시 시점 조정 (3초)
-    const timer = setTimeout(() => setShowResults(true), 3000);
-    return () => clearTimeout(timer);
-  }, []);
+    setCollapseSeats(false);
+    setShowResults(false);
+
+    const collapseTimer = setTimeout(() => setCollapseSeats(true), collapseStartMs);
+    const resultTimer = setTimeout(
+      () => setShowResults(true),
+      collapseStartMs + collapseDurationMs + 120,
+    );
+
+    return () => {
+      clearTimeout(collapseTimer);
+      clearTimeout(resultTimer);
+    };
+  }, [collapseStartMs]);
 
   return (
     <motion.div
@@ -935,8 +1126,6 @@ function ResultPhase({
       exit={{ opacity: 0 }}
       className="flex flex-col items-center h-full py-8 gap-6 relative"
     >
-      {showResults && passed && <Confetti />}
-
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col gap-2">
           {Array.from({ length: layout.rows }, (_, r) => r + 1).map((row) => (
@@ -955,7 +1144,7 @@ function ResultPhase({
                       const id = `${row}-${col}`;
                       const info = seatMap.get(id);
                       if (!info) {
-                        return <div key={id} className="w-[54px] h-[54px]" />;
+                        return <div key={id} className="w-[60px] h-[60px]" />;
                       }
                       return (
                         <SeatCell
@@ -963,6 +1152,7 @@ function ResultPhase({
                           info={info}
                           phase="RESULT"
                           flipDelay={flipDelayMap.get(id) ?? 0}
+                          resultFadeOut={collapseSeats}
                         />
                       );
                     })}
@@ -977,73 +1167,69 @@ function ResultPhase({
       <AnimatePresence>
         {showResults && (
           <motion.div
-            initial={{ opacity: 0, y: 80, scale: 0.9 }}
+            initial={{ opacity: 0, y: 20, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ type: "spring", stiffness: 180, damping: 18 }}
-            className="glass-strong rounded-3xl px-14 py-10 flex flex-col items-center gap-6 z-40"
+            transition={{ duration: 0.42, ease: [0.22, 0.76, 0.26, 1] }}
+            className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
           >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{
-                type: "spring",
-                stiffness: 250,
-                damping: 15,
-                delay: 0.15,
-              }}
-              className="flex items-center gap-3"
-            >
-              {passed ? (
-                <CheckCircle2 className="w-10 h-10 text-emerald-700" />
-              ) : (
-                <XCircle className="w-10 h-10 text-red-700" />
-              )}
-              <span
-                className={`text-5xl font-extrabold ${passed ? "text-emerald-800" : "text-red-800"}`}
+            <div className="rounded-[36px] border border-slate-200/90 bg-white/96 px-16 py-12 shadow-[0_28px_90px_rgba(15,23,42,0.10)] backdrop-blur-sm min-w-[620px]">
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.32, delay: 0.08 }}
+                className="flex flex-col items-center gap-8 text-center"
               >
-                {passed ? "가결" : "부결"}
-              </span>
-            </motion.div>
+                <div className="flex items-center gap-3">
+                  {passed ? (
+                    <CheckCircle2 className="w-10 h-10 text-blue-700" />
+                  ) : (
+                    <XCircle className="w-10 h-10 text-red-700" />
+                  )}
+                  <span
+                    className={`text-5xl font-extrabold tracking-tight ${passed ? "text-blue-800" : "text-red-800"}`}
+                  >
+                    {passed ? "가결" : "부결"}
+                  </span>
+                </div>
 
-            <div className="flex items-center gap-10 text-2xl font-bold">
-              <span className="text-emerald-800">찬성 {proCount}표</span>
-              <span className="text-slate-400">/</span>
-              <span className="text-red-800">반대 {conCount}표</span>
-            </div>
+                <div className="w-full max-w-[560px] flex flex-col gap-4">
+                  <div className="rounded-[26px] bg-white/70 px-4 py-3 ring-1 ring-slate-200/70">
+                    <div className="flex items-center overflow-hidden rounded-[18px] bg-white">
+                      <motion.div
+                        className="bg-blue-500 text-white px-5 py-4 text-left"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.max(proPct, 10)}%` }}
+                        transition={{ duration: 0.5, delay: 0.22, ease: "easeOut" }}
+                      >
+                        <div className="text-sm font-bold">찬성</div>
+                      </motion.div>
+                      <div className="flex-1 bg-white px-5 py-4 text-right text-3xl font-extrabold text-slate-700">
+                        {proPct.toFixed(0)}%
+                      </div>
+                    </div>
+                  </div>
 
-            <div className="w-96 flex flex-col gap-3">
-              <div className="flex gap-1 h-10 rounded-lg overflow-hidden bg-slate-200 ring-1 ring-slate-300/80">
-                <motion.div
-                  className="bg-emerald-600 rounded-l-lg flex items-center justify-center text-sm font-bold text-white"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${proPct}%` }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 120,
-                    damping: 18,
-                    delay: 0.3,
-                  }}
-                >
-                  {proPct > 10 && `${proPct.toFixed(1)}%`}
-                </motion.div>
-                <motion.div
-                  className="bg-red-600 rounded-r-lg flex items-center justify-center text-sm font-bold text-white"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${conPct}%` }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 120,
-                    damping: 18,
-                    delay: 0.3,
-                  }}
-                >
-                  {conPct > 10 && `${conPct.toFixed(1)}%`}
-                </motion.div>
-              </div>
-              <div className="flex justify-between text-sm text-slate-600">
-                <span>찬성 {proPct.toFixed(1)}%</span>
-                <span>반대 {conPct.toFixed(1)}%</span>
-              </div>
+                  <div className="rounded-[26px] bg-white/70 px-4 py-3 ring-1 ring-slate-200/70">
+                    <div className="flex items-center overflow-hidden rounded-[18px] bg-white">
+                      <motion.div
+                        className="bg-red-600 text-white px-5 py-4 text-left"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.max(conPct, 10)}%` }}
+                        transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+                      >
+                        <div className="text-sm font-bold">반대</div>
+                      </motion.div>
+                      <div className="flex-1 bg-white px-5 py-4 text-right text-3xl font-extrabold text-slate-700">
+                        {conPct.toFixed(0)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-sm text-slate-500">
+                  찬성 {proCount}표 · 반대 {conCount}표
+                </div>
+              </motion.div>
             </div>
           </motion.div>
         )}
@@ -1089,6 +1275,8 @@ function EndedPhase() {
 
 export default function ScreenPage() {
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
+  const demoVotesEnabled = searchParams.get("demoVotes") === "1";
 
   const [meetingState, setMeetingState] = useState<MeetingState | null>(null);
   const [agenda, setAgenda] = useState<Agenda | null>(null);
@@ -1311,6 +1499,10 @@ export default function ScreenPage() {
   }, [supabase]);
 
   const seatGrid: SeatVoteInfo[] = useMemo(() => {
+    if (demoVotesEnabled && phase === "RESULT") {
+      return buildDemoSeatGrid(seatLayout);
+    }
+
     const sorted = [...profiles].sort((a, b) => {
       const pa = parseSeat(a.assigned_seat);
       const pb = parseSeat(b.assigned_seat);
@@ -1327,10 +1519,10 @@ export default function ScreenPage() {
         userId: p.id,
       };
     });
-  }, [profiles, votes, presenceSet]);
+  }, [demoVotesEnabled, phase, presenceSet, profiles, seatLayout, votes]);
 
   return (
-    <div className="screen-page-light h-screen w-screen overflow-hidden relative text-slate-900">
+      <div className="screen-page-light h-screen w-screen overflow-hidden relative text-slate-900">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-sky-200/45 rounded-full blur-[180px]" />
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-200/40 rounded-full blur-[160px]" />
@@ -1348,7 +1540,9 @@ export default function ScreenPage() {
           <IdlePhase questions={questions} />
         )}
         {phase === "INTRO" && <IntroPhase agenda={agenda} />}
-        {phase === "QA" && <QaPhase agenda={agenda} speaker={speaker} />}
+        {phase === "QA" && (
+          <QaPhase agenda={agenda} speaker={speaker} questions={questions} />
+        )}
         {phase === "VOTING" && (
           <VotingPhase
             agenda={agenda}
@@ -1362,6 +1556,6 @@ export default function ScreenPage() {
         )}
         {phase === "ENDED" && <EndedPhase />}
       </AnimatePresence>
-    </div>
+      </div>
   );
 }

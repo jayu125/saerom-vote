@@ -34,7 +34,7 @@ export default function MeetingClosedPage() {
           <Sparkles className="w-8 h-8 text-white" />
         </motion.div>
         <p className="text-lg md:text-xl text-text-primary leading-relaxed font-medium">
-          시간 내어 대위원회에 참여해주셔서 감사드립니다. 수고하셨습니다!
+          시간 내어 대의원회에 참여해주셔서 감사드립니다. 수고하셨습니다!
         </p>
         <p className="text-sm text-text-muted">{sec}초 후 홈으로 이동합니다</p>
       </motion.div>

@@ -72,6 +72,7 @@ export default function RemoteControlPage() {
   >([]);
   const [remoteTab, setRemoteTab] = useState<'control' | 'seatmap'>('control');
   const [remoteProfiles, setRemoteProfiles] = useState<Profile[]>([]);
+  const [accessDenied, setAccessDenied] = useState(false);
   const presenceSet = usePresence('saerom-presence');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const agendaIdRef = useRef<string | null>(null);
@@ -81,16 +82,53 @@ export default function RemoteControlPage() {
   const currentPhase = meetingState?.phase ?? 'IDLE';
   const currentAgendaId = meetingState?.current_agenda_id;
   const currentAgenda = agendas.find((a) => a.id === currentAgendaId);
+  const resolveCurrentUser = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return null;
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    let resolvedProfile = data as Profile | null;
+
+    if (!resolvedProfile) {
+      const { data: byEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', user.email!)
+        .maybeSingle();
+      resolvedProfile = (byEmail as Profile | null) ?? null;
+    }
+
+    return resolvedProfile;
+  }, [supabase]);
 
   // ─── Fetch initial data ───────────────────────────────────────────────
   useEffect(() => {
     async function init() {
+      const currentUser = await resolveCurrentUser();
+      const canAccess =
+        currentUser?.role === 'admin' || currentUser?.role === 'facilitator';
+
+      if (!canAccess) {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
       const [{ data: msData }, { data: agData }, { count: voterCount }, { data: profileData }] = await Promise.all([
         supabase.from('meeting_state').select('*').single(),
         supabase.from('agendas').select('*').order('order_index'),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'attendee').neq('assigned_seat', ''),
         supabase.from('profiles').select('*').eq('role', 'attendee').neq('assigned_seat', ''),
       ]);
+      setAccessDenied(false);
       if (msData) setMeetingState(msData as MeetingState);
       if (agData) setAgendas(agData);
       if (profileData) setRemoteProfiles(profileData as Profile[]);
@@ -98,7 +136,7 @@ export default function RemoteControlPage() {
       setLoading(false);
     }
     init();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [resolveCurrentUser, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Fetch questions when agenda changes ──────────────────────────────
   const fetchQuestions = useCallback(async (agendaId: string) => {
@@ -430,6 +468,33 @@ export default function RemoteControlPage() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-primary px-6">
+        <div className="glass-strong rounded-3xl p-8 max-w-md w-full text-center space-y-5">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-accent-red/15 flex items-center justify-center">
+            <Radio className="w-7 h-7 text-accent-red" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold text-text-primary">접근 권한이 없습니다</h1>
+            <p className="text-sm text-text-secondary">
+              이 페이지는 관리자 또는 진행자만 접근할 수 있습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = '/';
+            }}
+            className="w-full py-3 rounded-2xl bg-accent-blue text-white font-semibold cursor-pointer"
+          >
+            홈으로 이동
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const waitingQuestions = questions.filter((q) => q.status === 'waiting');
   const speakingQuestion = questions.find((q) => q.status === 'speaking');
   const doneQuestions = questions.filter((q) => q.status === 'done');
@@ -447,7 +512,7 @@ export default function RemoteControlPage() {
               <Radio className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-sm font-bold gradient-text leading-tight">대위원회</h1>
+              <h1 className="text-sm font-bold gradient-text leading-tight">대의원회</h1>
               <p className="text-[10px] text-text-muted">진행자 컨트롤</p>
             </div>
           </div>
@@ -690,6 +755,7 @@ export default function RemoteControlPage() {
         {/* ── Phase-specific content ────────────────────────────────────── */}
         <AnimatePresence mode="wait">
           {/* INTRO / QA Phase: Question Queue */}
+
           {(currentPhase === 'INTRO' || currentPhase === 'QA') && (
             <motion.section
               key="qa"
@@ -992,81 +1058,6 @@ export default function RemoteControlPage() {
           )}
         </AnimatePresence>
 
-        {/* ── Inline Questions Section (always visible during meeting) ── */}
-        {currentAgendaId && (waitingQuestions.length > 0 || speakingQuestion || doneQuestions.length > 0) && (
-          <motion.section
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass rounded-2xl p-4"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <MessageSquare className="w-4 h-4 text-accent-amber" />
-              <p className="text-sm font-semibold">질문 목록</p>
-              <span className="ml-auto text-xs text-text-muted">{waitingQuestions.length}명 대기</span>
-            </div>
-
-            {speakingQuestion && (
-              <div className="mb-3 p-3 rounded-xl bg-accent-amber/10 border border-accent-amber/20">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75 animate-ping" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-amber" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium">{speakingQuestion.profile?.name ?? '알 수 없음'}</p>
-                      <p className="text-[10px] text-text-muted">좌석 {speakingQuestion.profile?.assigned_seat}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => finishSpeaker(speakingQuestion)}
-                    className="px-3 py-1.5 rounded-lg bg-accent-green/15 text-accent-green text-xs font-medium active:scale-95 transition-transform cursor-pointer"
-                  >
-                    <span className="flex items-center gap-1"><Check className="w-3 h-3" /> 완료</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {waitingQuestions.map((q, i) => (
-                <div key={q.id} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span className="w-6 h-6 rounded-full bg-white/10 text-[10px] font-bold flex items-center justify-center text-text-muted shrink-0">
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{q.profile?.name ?? '알 수 없음'}</p>
-                      <p className="text-[10px] text-text-muted">좌석 {q.profile?.assigned_seat}</p>
-                      {q.memo && <p className="text-[10px] text-accent-cyan mt-0.5 truncate">메모: {q.memo}</p>}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => designateSpeaker(q)}
-                    disabled={!!speakingQuestion}
-                    className="px-3 py-1.5 rounded-lg bg-accent-amber/15 text-accent-amber text-xs font-medium active:scale-95 transition-transform disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed shrink-0 ml-2"
-                  >
-                    <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> 지명</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {doneQuestions.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-white/5">
-                <p className="text-[10px] text-text-muted mb-1">완료 ({doneQuestions.length})</p>
-                <div className="flex flex-wrap gap-2">
-                  {doneQuestions.map((q) => (
-                    <span key={q.id} className="inline-flex items-center gap-1 text-[10px] text-text-muted opacity-60">
-                      <Check className="w-3 h-3 text-accent-green" />
-                      {q.profile?.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </motion.section>
-        )}
           </>
         )}
       </main>

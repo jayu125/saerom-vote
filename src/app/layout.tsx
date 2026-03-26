@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: '대위원회',
-  description: '새롬고등학교 대위원회 투표 시스템',
+  title: '대의원회',
+  description: '새롬고등학교 대의원회 투표 시스템',
 };
 
 export const viewport: Viewport = {
