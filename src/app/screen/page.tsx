@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Vote,
@@ -1273,7 +1273,7 @@ function EndedPhase() {
 // Main Screen Page
 // ---------------------------------------------------------------------------
 
-export default function ScreenPage() {
+function ScreenPageContent() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
   const demoVotesEnabled = searchParams.get("demoVotes") === "1";
@@ -1557,5 +1557,24 @@ export default function ScreenPage() {
         {phase === "ENDED" && <EndedPhase />}
       </AnimatePresence>
       </div>
+  );
+}
+
+function ScreenPageFallback() {
+  return (
+    <div className="screen-page-light h-screen w-screen overflow-hidden relative text-slate-900 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <p className="text-sm text-slate-500">화면을 준비하는 중입니다...</p>
+      </div>
+    </div>
+  );
+}
+
+export default function ScreenPage() {
+  return (
+    <Suspense fallback={<ScreenPageFallback />}>
+      <ScreenPageContent />
+    </Suspense>
   );
 }
