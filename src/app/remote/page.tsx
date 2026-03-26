@@ -48,6 +48,19 @@ const PHASE_META: Record<Phase, { label: string; labelKo: string; color: string;
 
 const TIMER_PRESETS = [30, 60, 90];
 
+function parseStudentClass(studentId: string) {
+  const digits = studentId.replace(/\D/g, '');
+  if (digits.length < 3) return null;
+
+  const grade = Number(digits.slice(0, 1));
+  const classNumber = Number(digits.slice(1, 3));
+
+  if (!Number.isFinite(grade) || !Number.isFinite(classNumber)) return null;
+  if (grade < 1 || grade > 3 || classNumber < 1 || classNumber > 13) return null;
+
+  return { grade, classNumber };
+}
+
 export default function RemoteControlPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -70,7 +83,8 @@ export default function RemoteControlPage() {
   const [endMeetingSummary, setEndMeetingSummary] = useState<
     { id: string; title: string; order_index: number; pro: number; con: number; total: number }[]
   >([]);
-  const [remoteTab, setRemoteTab] = useState<'control' | 'seatmap'>('control');
+  const [remoteTab, setRemoteTab] = useState<'control' | 'seatmap' | 'members'>('control');
+  const [memberViewMode, setMemberViewMode] = useState<'status' | 'class'>('status');
   const [remoteProfiles, setRemoteProfiles] = useState<Profile[]>([]);
   const [accessDenied, setAccessDenied] = useState(false);
   const presenceSet = usePresence('saerom-presence');
@@ -126,7 +140,7 @@ export default function RemoteControlPage() {
         supabase.from('meeting_state').select('*').single(),
         supabase.from('agendas').select('*').order('order_index'),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'attendee').neq('assigned_seat', ''),
-        supabase.from('profiles').select('*').eq('role', 'attendee').neq('assigned_seat', ''),
+        supabase.from('profiles').select('*').eq('role', 'attendee').order('student_id'),
       ]);
       setAccessDenied(false);
       if (msData) setMeetingState(msData as MeetingState);
@@ -204,7 +218,7 @@ export default function RemoteControlPage() {
         if (aid) fetchVotesRef.current(aid);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
-        const { data } = await supabase.from('profiles').select('*').eq('role', 'attendee').neq('assigned_seat', '');
+        const { data } = await supabase.from('profiles').select('*').eq('role', 'attendee').order('student_id');
         if (data) setRemoteProfiles(data as Profile[]);
       })
       .subscribe((status) => {
@@ -498,6 +512,32 @@ export default function RemoteControlPage() {
   const waitingQuestions = questions.filter((q) => q.status === 'waiting');
   const speakingQuestion = questions.find((q) => q.status === 'speaking');
   const doneQuestions = questions.filter((q) => q.status === 'done');
+  const seatedProfiles = remoteProfiles.filter((profile) => !!profile.assigned_seat);
+  const presentMembers = seatedProfiles;
+  const absentMembers = remoteProfiles.filter((profile) => !profile.assigned_seat);
+  const classStatusGroups = (() => {
+    const groups = new Map<string, { grade: number; classNumber: number; members: Profile[] }>();
+
+    for (let grade = 1; grade <= 3; grade += 1) {
+      for (let classNumber = 1; classNumber <= 13; classNumber += 1) {
+        groups.set(`${grade}-${classNumber}`, { grade, classNumber, members: [] });
+      }
+    }
+
+    remoteProfiles.forEach((profile) => {
+      const parsed = parseStudentClass(profile.student_id);
+      if (!parsed) return;
+      const key = `${parsed.grade}-${parsed.classNumber}`;
+      const bucket = groups.get(key);
+      if (bucket) bucket.members.push(profile);
+    });
+
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      members: group.members.sort((a, b) => a.student_id.localeCompare(b.student_id)),
+      presentCount: group.members.filter((member) => !!member.assigned_seat).length,
+    }));
+  })();
 
   const proPercent = voteCount > 0 ? Math.round((proCount / voteCount) * 100) : 0;
   const conPercent = voteCount > 0 ? Math.round((conCount / voteCount) * 100) : 0;
@@ -535,6 +575,15 @@ export default function RemoteControlPage() {
               >
                 <Grid3x3 className="w-3.5 h-3.5" />
                 좌석
+              </button>
+              <button
+                onClick={() => setRemoteTab('members')}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                  remoteTab === 'members' ? 'bg-accent-blue/20 text-accent-blue' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                멤버
               </button>
             </div>
             <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
@@ -581,13 +630,13 @@ export default function RemoteControlPage() {
                 실시간 좌석 현황
               </h2>
               <span className="text-xs text-text-muted">
-                {remoteProfiles.filter((p) => presenceSet.has(p.id)).length}/{remoteProfiles.length}명 접속
+                {seatedProfiles.filter((p) => presenceSet.has(p.id)).length}/{seatedProfiles.length}명 접속
               </span>
             </div>
             <div className="flex justify-center overflow-x-auto py-4">
               <SeatGrid
                 layout={(meetingState?.seat_layout as SeatLayout) ?? DEFAULT_SEAT_LAYOUT}
-                profiles={remoteProfiles}
+                profiles={seatedProfiles}
                 presenceSet={presenceSet}
                 interactive
                 cellSize={46}
@@ -605,6 +654,191 @@ export default function RemoteControlPage() {
               </span>
             </div>
           </motion.div>
+        </main>
+      )}
+
+      {remoteTab === 'members' && (
+        <main className="max-w-5xl mx-auto px-4 mt-4 space-y-4">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass rounded-2xl p-5 space-y-4"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-text-primary">멤버 출석 현황</h2>
+                <p className="text-xs text-text-muted">
+                  좌석이 지정된 인원을 출석으로 간주합니다.
+                </p>
+              </div>
+
+              <div className="flex items-center glass rounded-xl p-1 gap-1 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setMemberViewMode('status')}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    memberViewMode === 'status'
+                      ? 'bg-accent-blue/20 text-accent-blue'
+                      : 'text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  출석별 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberViewMode('class')}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    memberViewMode === 'class'
+                      ? 'bg-accent-blue/20 text-accent-blue'
+                      : 'text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  반 별로 보기
+                </button>
+              </div>
+            </div>
+
+            {memberViewMode === 'status' && (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-accent-blue/15 bg-accent-blue/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-text-primary">출석함</h3>
+                    <span className="text-xs font-semibold text-accent-blue">
+                      {presentMembers.length}명
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                    {presentMembers.length === 0 && (
+                      <p className="text-xs text-text-muted">아직 출석한 인원이 없습니다.</p>
+                    )}
+                    {presentMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {member.student_id} {member.name}
+                          </p>
+                          <p className="text-[11px] text-text-muted">
+                            좌석 {member.assigned_seat}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-accent-blue/15 px-2.5 py-1 text-[11px] font-semibold text-accent-blue">
+                          출석
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-accent-red/15 bg-accent-red/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-text-primary">미출석</h3>
+                    <span className="text-xs font-semibold text-accent-red">
+                      {absentMembers.length}명
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                    {absentMembers.length === 0 && (
+                      <p className="text-xs text-text-muted">모든 멤버가 출석했습니다.</p>
+                    )}
+                    {absentMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="rounded-xl border border-white/6 bg-white/[0.03] px-3 py-2 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {member.student_id} {member.name}
+                          </p>
+                          <p className="text-[11px] text-text-muted">
+                            아직 좌석 미지정
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-accent-red/15 px-2.5 py-1 text-[11px] font-semibold text-accent-red">
+                          미출석
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {memberViewMode === 'class' && (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {classStatusGroups.map((group) => {
+                  const missingSlots = Math.max(0, 2 - group.presentCount);
+                  return (
+                    <div
+                      key={`${group.grade}-${group.classNumber}`}
+                      className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-text-primary">
+                            {group.grade}학년 {group.classNumber}반
+                          </p>
+                          <p className="text-[11px] text-text-muted">
+                            출석 {group.presentCount}/2
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {Array.from({ length: 2 }).map((_, index) => {
+                            const active = index < group.presentCount;
+                            return (
+                              <span
+                                key={index}
+                                className={`h-2.5 w-2.5 rounded-full ${
+                                  active ? 'bg-accent-blue shadow-[0_0_8px_rgba(59,130,246,0.45)]' : 'bg-accent-red/70'
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        {group.members.length === 0 && (
+                          <p className="text-[11px] text-text-muted">
+                            등록된 의원 정보가 없습니다.
+                          </p>
+                        )}
+                        {group.members.map((member) => (
+                          <div
+                            key={member.id}
+                            className="rounded-xl border border-white/6 bg-black/10 px-3 py-2 flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-text-primary truncate">
+                                {member.student_id} {member.name}
+                              </p>
+                              <p className="text-[10px] text-text-muted">
+                                {member.assigned_seat ? `좌석 ${member.assigned_seat}` : '미출석'}
+                              </p>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${
+                              member.assigned_seat
+                                ? 'bg-accent-blue/15 text-accent-blue'
+                                : 'bg-accent-red/15 text-accent-red'
+                            }`}>
+                              {member.assigned_seat ? '출석' : '미출석'}
+                            </span>
+                          </div>
+                        ))}
+                        {missingSlots > 0 && group.members.length < 2 && (
+                          <p className="text-[10px] text-text-muted">
+                            아직 확인되지 않은 의원 {missingSlots}명
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.section>
         </main>
       )}
 
